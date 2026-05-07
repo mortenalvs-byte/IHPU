@@ -2,6 +2,10 @@ import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';
+// IHPU_FORCE_PROD=1 forces file:// load of dist/index.html even when not packaged.
+// Used by tests/smoke/electron.spec.ts so Playwright can verify the production bundle
+// without first having to start a Vite dev server.
+const FORCE_PROD = process.env.IHPU_FORCE_PROD === '1';
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -17,7 +21,8 @@ function createWindow(): void {
     }
   });
 
-  if (!app.isPackaged) {
+  const useDev = !app.isPackaged && !FORCE_PROD;
+  if (useDev) {
     win.loadURL(DEV_SERVER_URL);
     win.webContents.openDevTools({ mode: 'detach' });
   } else {
