@@ -7,7 +7,7 @@
 import type { PressureChart, SelectedRange } from '../charts/pressureChart';
 import { evaluateHoldPeriod } from '../domain/holdPeriod';
 import { parseIhpuPressureLog } from '../domain/ihpuParser';
-import { calculatePressureDrop } from '../domain/pressureAnalysis';
+import { calculatePressureDrop, selectRowsInTimeRange } from '../domain/pressureAnalysis';
 import type { PressureChannel, PressureRow } from '../domain/types';
 import { parseTimeParts, toDeterministicTimestampMs } from '../utils/dateTime';
 import { msToTimeText, render } from './render';
@@ -247,7 +247,17 @@ function recomputeAnalysis(ctx: AppContext): void {
   }
 
   const channel = ctx.state.selectedChannel;
-  const rows = filterRowsToSelection(pr.rows, ctx.state);
+  const fromMs = ctx.state.selectedFromTimestampMs ?? undefined;
+  const toMs = ctx.state.selectedToTimestampMs ?? undefined;
+
+  // Range-filtering model: the UI pre-filters rows ONCE via the domain helper
+  // selectRowsInTimeRange. The downstream domain functions (calculatePressureDrop,
+  // evaluateHoldPeriod) then receive already-narrowed rows and we deliberately
+  // do NOT also pass fromTimestampMs/toTimestampMs to evaluateHoldPeriod —
+  // that would refilter an already-filtered list and silently work today
+  // because the result is identical, but it is confusing and brittle.
+  // Single source of filtering = single source of truth for the analyzed range.
+  const rows = selectRowsInTimeRange(pr.rows, fromMs, toMs);
 
   ctx.state.baselineDrop = calculatePressureDrop(rows, channel);
 
@@ -260,20 +270,9 @@ function recomputeAnalysis(ctx: AppContext): void {
   }
 
   ctx.state.holdResult = evaluateHoldPeriod(rows, channel, {
-    fromTimestampMs: ctx.state.selectedFromTimestampMs ?? undefined,
-    toTimestampMs: ctx.state.selectedToTimestampMs ?? undefined,
     targetPressure: ctx.state.targetPressure ?? undefined,
     maxDropPct: ctx.state.maxDropPct
   });
-}
-
-function filterRowsToSelection(rows: PressureRow[], state: AppState): PressureRow[] {
-  const fromMs = state.selectedFromTimestampMs;
-  const toMs = state.selectedToTimestampMs;
-  if (fromMs === null && toMs === null) return rows;
-  const lo = fromMs ?? Number.NEGATIVE_INFINITY;
-  const hi = toMs ?? Number.POSITIVE_INFINITY;
-  return rows.filter((r) => r.timestampMs >= lo && r.timestampMs <= hi);
 }
 
 function timeTextToMsOnLogDate(timeText: string, rows: PressureRow[]): number | null {

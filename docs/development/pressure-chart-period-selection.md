@@ -121,6 +121,70 @@ animations, zoom changes, and resize.
 input texts, calls `chart.setSelectedRange(null)`, and triggers
 recomputation against the full range.
 
+## Range-filtering model (single source of filtering)
+
+The UI applies the operator-selected range exactly once, in
+`recomputeAnalysis(ctx)` (`src/app/events.ts`):
+
+```ts
+const rows = selectRowsInTimeRange(pr.rows, fromMs, toMs);
+calculatePressureDrop(rows, channel, { targetPressure });
+evaluateHoldPeriod(rows, channel, { targetPressure, maxDropPct });
+```
+
+`selectRowsInTimeRange` is the canonical domain helper. The downstream
+analysis functions receive already-narrowed rows and we deliberately do
+**not** also pass `fromTimestampMs` / `toTimestampMs` to `evaluateHoldPeriod`
+in this code path. Doing both would silently work today (an already-filtered
+list re-filtered with the same range is the same list), but it makes the
+data-flow harder to reason about and would mask bugs where the two ranges
+drift apart.
+
+`evaluateHoldPeriod` retains its `fromTimestampMs` / `toTimestampMs` options
+in the domain API for future callers who want range-aware hold evaluation
+without going through the UI helper. The UI just doesn't use them.
+
+## Manual QA checklist (before merge or release)
+
+The smoke test exercises **manual period input** end to end (Fra/Til text
+fields, including the shorter range and reset). It does **not** exercise the
+**drag-select gesture** in the chart itself, because mouse-drag automation
+in Electron + Playwright is flaky enough on CI that a green test would lower
+confidence rather than raise it. Drag-select shares state and analysis code
+paths with manual input via the same `handleChartPeriodSelected` callback,
+so a bug in the analysis layer would still be caught by the manual-input
+smoke. The gesture pixel-to-timestamp conversion is the only piece not
+covered automatically.
+
+Before merging this PR (or any future PR that touches the chart, period
+inputs, or `recomputeAnalysis`), run through this manual checklist on a
+real desktop:
+
+1. `npm run electron:dev` (or `Start IHPU.bat`).
+2. Upload `test-data/Dekk test Seal T.2`.
+3. Confirm the chart renders both T1 and T2 lines.
+4. **Wheel-zoom** in on the middle of the chart, confirm time-axis ticks
+   update.
+5. Click **Tilbakestill zoom** — the chart returns to full extent.
+6. **Drag horizontally** across a portion of the chart from left to right.
+   On mouseup:
+   - The selected range gets a translucent green overlay.
+   - `Valgt periode` updates with the dragged HH:MM:SS times.
+   - `Periode-varighet` and the pressure summary recompute.
+   - `Fra` / `Til` inputs reflect the dragged times.
+7. Drag again **right to left** — confirm the result is normalised
+   (`from <= to`).
+8. Drag a tiny segment (under ~5 px) — confirm it is treated as an
+   accidental click and is ignored (no selection appears).
+9. Type a new value into `Fra` (e.g. `13:15:00`) — confirm the chart
+   overlay updates and analysis recomputes.
+10. Click **Tilbakestill periode** — confirm the overlay disappears, both
+    inputs clear, and full-range metrics return.
+11. Try an invalid time (e.g. `99:99`) — confirm `Meldinger` shows a
+    `Chart: Ugyldig …` message and analysis does not crash.
+
+If any of these fail, file a bug; do not merge.
+
 ## Canonical-fixture expectations (encoded in the smoke test)
 
 After uploading `test-data/Dekk test Seal T.2`:
