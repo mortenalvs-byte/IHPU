@@ -148,11 +148,12 @@ export interface PressureDropOptions {
    * Reference pressure for dropPct calculation. When omitted, the first valid
    * row's pressure is used as the reference.
    *
-   * dropPct = dropBar / Math.abs(reference). The absolute value is intentional —
-   * for sensors that read negative (e.g. T1 in the canonical fixture, where all
-   * values are negative), dividing by the raw negative reference would flip the
-   * sign and report a "drop" when pressure actually increased. Math.abs keeps
-   * sign of dropPct aligned with sign of dropBar.
+   * dropPct = (dropBar / Math.abs(reference)) * 100, reported in PERCENT POINTS.
+   * The absolute value is intentional — for sensors that read negative (e.g. T1
+   * in the canonical fixture, where all values are negative), dividing by the
+   * raw negative reference would flip the sign and report a "drop" when
+   * pressure actually increased. Math.abs keeps the sign of dropPct aligned
+   * with the sign of dropBar.
    */
   targetPressure?: number;
 }
@@ -174,7 +175,10 @@ export interface PressureDropResult {
   durationMinutes: number | null;
   /** dropBar = startPressure - endPressure. Positive = pressure dropped. Negative = pressure increased. */
   dropBar: number | null;
-  /** dropPct = dropBar / Math.abs(referencePressure). Sign matches dropBar. */
+  /**
+   * dropPct = (dropBar / Math.abs(referencePressure)) * 100, in PERCENT POINTS.
+   * A 5 % drop is reported as 5, not 0.05. Sign matches dropBar.
+   */
   dropPct: number | null;
   dropBarPerMinute: number | null;
   dropBarPerHour: number | null;
@@ -190,9 +194,10 @@ export interface HoldPeriodCriteria {
   /** Reference pressure for dropPct. Forwarded to calculatePressureDrop as options.targetPressure. */
   targetPressure?: number;
   /**
-   * Maximum allowed dropPct (fractional, not percent — e.g. 0.05 means 5%).
-   * Without this, evaluateHoldPeriod returns status: 'UNKNOWN' because there is
-   * no threshold to compare against.
+   * Maximum allowed dropPct, in PERCENT POINTS — e.g. 5 means 5 %, not 0.05.
+   * Compared directly against PressureDropResult.dropPct, which uses the same
+   * unit. Without this, evaluateHoldPeriod returns status: 'UNKNOWN' because
+   * there is no threshold to compare against.
    */
   maxDropPct?: number;
 }

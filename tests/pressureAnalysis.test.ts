@@ -62,9 +62,9 @@ describe('calculatePressureDrop on canonical fixture', () => {
     expect(drop.durationMinutes).toBeCloseTo(69.4, 1);
     expect(drop.dropBarPerMinute).toBeCloseTo(0.217694, 5);
     expect(drop.dropBarPerHour).toBeCloseTo(13.061620, 4);
-    // Default reference is start (314.386993) → dropPct ≈ 4.81%
+    // Default reference is start (314.386993) → dropPct ≈ 4.8055 (percent points).
     expect(drop.referencePressure).toBeCloseTo(314.386993, 6);
-    expect(drop.dropPct).toBeCloseTo(0.048055, 5);
+    expect(drop.dropPct).toBeCloseTo(4.805523, 4);
   });
 
   it('computes T1 over the full fixture (negative drop = pressure increased)', () => {
@@ -76,16 +76,16 @@ describe('calculatePressureDrop on canonical fixture', () => {
     expect(drop.endPressure).toBeCloseTo(-2.044990, 6);
     expect(drop.dropBar).toBeCloseTo(-0.913717, 6);
     expect(drop.durationMinutes).toBeCloseTo(69.4, 1);
-    // Pressure increased over the period — dropPct must be NEGATIVE.
+    // Pressure increased over the period — dropPct must be NEGATIVE in percent points.
     // Math.abs(reference) keeps dropPct sign aligned with dropBar.
-    expect(drop.dropPct).toBeCloseTo(-0.308823, 5);
+    expect(drop.dropPct).toBeCloseTo(-30.8823, 3);
   });
 
   it('uses options.targetPressure when supplied (T2 against 300 bar)', () => {
     const drop = calculatePressureDrop(parsed.rows, 'p2', { targetPressure: 300 });
     expect(drop.referencePressure).toBe(300);
-    // dropBar / 300 = 15.107940 / 300 = 0.050360
-    expect(drop.dropPct).toBeCloseTo(0.050360, 5);
+    // (dropBar / 300) * 100 = (15.107940 / 300) * 100 = 5.0360 percent points
+    expect(drop.dropPct).toBeCloseTo(5.03598, 4);
   });
 
   it('falls back to startPressure when targetPressure is omitted', () => {
@@ -159,15 +159,15 @@ describe('calculatePressureDrop edge cases', () => {
 
   it('handles negative reference via Math.abs for dropPct sign', () => {
     // Synthetic: reference = -10, dropBar = -2 (pressure increased).
-    // Without abs, dropPct = -2 / -10 = 0.2 (looks like a 20% drop).
-    // With abs,    dropPct = -2 / 10 = -0.2 (correctly signed: increase).
+    // Without abs, dropPct = (-2 / -10) * 100 = +20 (looks like a 20% drop).
+    // With abs,    dropPct = (-2 / 10) * 100 = -20 (correctly signed: increase).
     const synth: PressureRow[] = [
       { ...parsed.rows[0], timestampMs: 0, p2: -10 },
       { ...parsed.rows[1], timestampMs: 60_000, p2: -8 }
     ];
     const drop = calculatePressureDrop(synth, 'p2');
     expect(drop.dropBar).toBeCloseTo(-2, 6);
-    expect(drop.dropPct).toBeCloseTo(-0.2, 6);
+    expect(drop.dropPct).toBeCloseTo(-20, 6);
   });
 });
 

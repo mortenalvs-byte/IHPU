@@ -93,14 +93,17 @@ PASS / FAIL / UNKNOWN evaluation against a `HoldPeriodCriteria`
 (`evaluateHoldPeriod`). All consume `PressureRow[]` from the parser; none of
 them touch the DOM, Chart.js, jsPDF, or CSV.
 
-`dropPct` uses `Math.abs(reference)` so the sign of `dropPct` follows the sign
-of `dropBar` — important for channels like T1 in the canonical fixture where
-all values are negative.
+`dropPct` is reported in **percent points** (a 5 % drop is `5`, not `0.05`),
+and uses `Math.abs(reference)` so the sign of `dropPct` follows the sign of
+`dropBar` — important for channels like T1 in the canonical fixture where all
+values are negative. `HoldPeriodCriteria.maxDropPct` uses the same unit, so
+`maxDropPct: 5` reads as "fail if drop exceeds 5 %".
 
 Canonical-fixture expectations (encoded as Vitest assertions): T2 over the
-full fixture drops 15.107940 bar (≈ 4.81 %) in 69.4 min; T1 *increases*
-0.913717 bar over the same period (negative drop, automatically PASS for any
-positive threshold).
+full fixture drops 15.107940 bar (≈ +4.8055 percent points) in 69.4 min; T1
+*increases* 0.913717 bar over the same period (≈ -30.8823 percent points,
+negative because pressure went up — automatically PASS for any positive
+threshold).
 
 See [docs/development/pressure-analysis-contract.md](docs/development/pressure-analysis-contract.md).
 

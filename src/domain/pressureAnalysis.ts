@@ -155,7 +155,12 @@ export function calculatePressureDrop(
     });
     dropPct = null;
   } else {
-    dropPct = dropBar / Math.abs(reference);
+    // dropPct is reported in PERCENT POINTS, not as a ratio. A 5 % drop is 5,
+    // not 0.05. This matches the unit users naturally read criteria like
+    // maxDropPct in (e.g. "fail if drop exceeds 5%"). Math.abs on the
+    // reference keeps the sign of dropPct aligned with the sign of dropBar
+    // even when reference is negative (e.g. T1 in the canonical fixture).
+    dropPct = (dropBar / Math.abs(reference)) * 100;
   }
 
   const dropBarPerMinute = dropBar / durationMinutes;

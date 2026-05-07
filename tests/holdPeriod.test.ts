@@ -18,21 +18,23 @@ describe('evaluateHoldPeriod on canonical fixture', () => {
     expect(result.drop.dropBar).toBeCloseTo(15.107940, 6);
   });
 
-  it('returns FAIL when T2 drop (4.81%) exceeds maxDropPct of 1%', () => {
-    const result = evaluateHoldPeriod(parsed.rows, 'p2', { maxDropPct: 0.01 });
+  it('returns FAIL when T2 drop (~4.8%) exceeds maxDropPct of 1', () => {
+    // maxDropPct is in PERCENT POINTS — 1 means 1 %, not 0.01.
+    const result = evaluateHoldPeriod(parsed.rows, 'p2', { maxDropPct: 1 });
     expect(result.status).toBe('FAIL');
-    expect(result.drop.dropPct!).toBeGreaterThan(0.01);
+    expect(result.drop.dropPct!).toBeGreaterThan(1);
   });
 
-  it('returns PASS when T2 drop (4.81%) is below maxDropPct of 10%', () => {
-    const result = evaluateHoldPeriod(parsed.rows, 'p2', { maxDropPct: 0.10 });
+  it('returns PASS when T2 drop (~4.8%) is below maxDropPct of 10', () => {
+    const result = evaluateHoldPeriod(parsed.rows, 'p2', { maxDropPct: 10 });
     expect(result.status).toBe('PASS');
-    expect(result.drop.dropPct!).toBeLessThan(0.10);
+    expect(result.drop.dropPct!).toBeLessThan(10);
   });
 
   it('returns PASS for T1 (pressure increased) with any positive maxDropPct', () => {
-    // T1 dropPct ≈ -0.309 (negative because pressure went up). PASS for any positive threshold.
-    const result = evaluateHoldPeriod(parsed.rows, 'p1', { maxDropPct: 0.05 });
+    // T1 dropPct ≈ -30.88 percent points (negative because pressure went up).
+    // PASS for any positive threshold.
+    const result = evaluateHoldPeriod(parsed.rows, 'p1', { maxDropPct: 5 });
     expect(result.status).toBe('PASS');
     expect(result.drop.dropPct!).toBeLessThan(0);
   });
@@ -40,10 +42,10 @@ describe('evaluateHoldPeriod on canonical fixture', () => {
   it('forwards targetPressure to the drop calculation', () => {
     const result = evaluateHoldPeriod(parsed.rows, 'p2', {
       targetPressure: 300,
-      maxDropPct: 0.10
+      maxDropPct: 10
     });
     expect(result.drop.referencePressure).toBe(300);
-    // 15.107940 / 300 = 0.0504, still under 0.10
+    // (15.107940 / 300) * 100 = 5.04 percent points, still under 10.
     expect(result.status).toBe('PASS');
   });
 
@@ -53,7 +55,7 @@ describe('evaluateHoldPeriod on canonical fixture', () => {
     const result = evaluateHoldPeriod(parsed.rows, 'p2', {
       fromTimestampMs: fromMs,
       toTimestampMs: toMs,
-      maxDropPct: 0.10
+      maxDropPct: 10
     });
     expect(result.drop.startTimestampMs).toBe(fromMs);
     expect(result.drop.endTimestampMs).toBe(toMs);
@@ -65,7 +67,7 @@ describe('evaluateHoldPeriod on canonical fixture', () => {
       fromTimestampMs: parsed.rows[5].timestampMs,
       toTimestampMs: parsed.rows[20].timestampMs,
       targetPressure: 320,
-      maxDropPct: 0.05
+      maxDropPct: 5
     };
     const result = evaluateHoldPeriod(parsed.rows, 'p2', criteria);
     expect(result.criteria).toEqual(criteria);
@@ -119,17 +121,17 @@ describe('evaluateHoldPeriod edge cases', () => {
   });
 
   it('PASS at the exact threshold (dropPct === maxDropPct)', () => {
-    const result = evaluateHoldPeriod(parsed.rows, 'p2', { maxDropPct: result_dropPct(parsed.rows) });
+    const result = evaluateHoldPeriod(parsed.rows, 'p2', { maxDropPct: expectedDropPctPercent(parsed.rows) });
     expect(result.status).toBe('PASS');
   });
 });
 
-// Helper: pre-compute T2 dropPct from the full fixture so we can test the
-// boundary condition (PASS when dropPct === maxDropPct).
-function result_dropPct(rows: ReturnType<typeof parseIhpuPressureLog>['rows']): number {
+// Helper: pre-compute T2 dropPct (in PERCENT POINTS) from the full fixture so
+// we can test the boundary condition (PASS when dropPct === maxDropPct).
+function expectedDropPctPercent(rows: ReturnType<typeof parseIhpuPressureLog>['rows']): number {
   const first = rows[0].p2!;
   const last = rows[rows.length - 1].p2!;
-  return (first - last) / Math.abs(first);
+  return ((first - last) / Math.abs(first)) * 100;
 }
 
 describe('holdPeriod purity: no UI/runtime imports in src/domain', () => {

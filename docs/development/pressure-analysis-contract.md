@@ -39,7 +39,7 @@ Returns `PressureDropResult`:
 | `referencePressure` | `options.targetPressure` if provided, else `startPressure`. |
 | `durationMinutes` | `(endTimestampMs - startTimestampMs) / 60000`. |
 | `dropBar` | `startPressure - endPressure`. **Positive** = pressure dropped. **Negative** = pressure increased over the period. |
-| `dropPct` | `dropBar / Math.abs(referencePressure)`. **Math.abs is intentional** — see below. |
+| `dropPct` | `(dropBar / Math.abs(referencePressure)) * 100`, reported in **PERCENT POINTS** — a 5 % drop is 5, not 0.05. **Math.abs is intentional** — see below. |
 | `dropBarPerMinute` / `dropBarPerHour` | Linear rates. |
 | `errors` / `warnings` | Structured `AnalysisIssue[]`. Function never throws. |
 
@@ -53,12 +53,20 @@ aligned with `dropBar`'s sign:
 
 | `startPressure` | `endPressure` | `dropBar` | `referencePressure` | `dropPct` (with abs) |
 |---|---|---|---|---|
-| 314 | 299 | +15 | 314 | +0.048 (4.8% drop) |
-| 314 | 320 | -6 | 314 | -0.019 (1.9% increase) |
-| -3 | -2 | -1 | -3 | -0.333 (33.3% increase) |
-| -3 | -4 | +1 | -3 | +0.333 (33.3% drop) |
+| 314 | 299 | +15 | 314 | +4.78 (4.8 % drop) |
+| 314 | 320 | -6 | 314 | -1.91 (1.9 % increase) |
+| -3 | -2 | -1 | -3 | -33.33 (33.3 % increase) |
+| -3 | -4 | +1 | -3 | +33.33 (33.3 % drop) |
 
 This is the semantic the dashboard, CSV, and PDF layers will all assume.
+
+#### Units: percent points, not ratio
+
+`dropPct` is in **percent points**. A 5 % drop is reported as `5`, not as
+`0.05`. `HoldPeriodCriteria.maxDropPct` uses the same unit, so `maxDropPct: 5`
+means "fail if pressure drops more than 5 %" — the comparison is directly
+`drop.dropPct <= criteria.maxDropPct`. This matches what users naturally type
+into a UI threshold field and what they read in a report.
 
 #### Error codes
 
@@ -86,7 +94,8 @@ Algorithm:
    - `PASS` if `drop.dropPct <= criteria.maxDropPct`.
    - `FAIL` if `drop.dropPct > criteria.maxDropPct`.
 
-`maxDropPct` is fractional (`0.05` = 5 %), not percent-typed. The test suite
+`maxDropPct` is in **percent points** (same unit as `drop.dropPct`). A
+threshold of `5` means "fail if pressure drops more than 5 %". The test suite
 covers PASS at the exact threshold.
 
 A negative `dropPct` (pressure increased over the period) automatically
@@ -102,10 +111,10 @@ These are the deterministic numbers `npm test` asserts against
 `test-data/Dekk test Seal T.2`. They serve as the contract the analysis layer
 must satisfy on every commit.
 
-| Channel | start | end | dropBar | dropPct (no target) | bar/min | bar/hour |
+| Channel | start | end | dropBar | dropPct (no target, percent) | bar/min | bar/hour |
 |---|---|---|---|---|---|---|
-| T2 (`p2`) | 314.386993 | 299.279053 | +15.107940 | +0.048055 | +0.217694 | +13.061620 |
-| T1 (`p1`) | -2.958707 | -2.044990 | -0.913717 | -0.308823 | -0.013166 | -0.789957 |
+| T2 (`p2`) | 314.386993 | 299.279053 | +15.107940 | **+4.8055** | +0.217694 | +13.061620 |
+| T1 (`p1`) | -2.958707 | -2.044990 | -0.913717 | **-30.8823** | -0.013166 | -0.789957 |
 
 Duration over the full fixture: ≈ 69.4 min (4164 seconds).
 
