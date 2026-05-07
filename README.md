@@ -107,12 +107,34 @@ threshold).
 
 See [docs/development/pressure-analysis-contract.md](docs/development/pressure-analysis-contract.md).
 
+## File upload summary
+
+The Electron renderer now consumes the parser and pressure-analysis layers
+end to end. Pick a local IHPU log (`.txt`/`.csv`/`.dat`/`.tsv`/`.log`) and the
+app shows: parser summary (rows / warnings / errors / duration / channels
+present), pressure-drop summary (start / end / drop / drop % of start /
+optional drop % of target / bar/min / bar/hour / pressure-increased flag),
+and a hold-period verdict (PASS / FAIL / UNKNOWN with used / allowed /
+margin %). All values come straight from the domain layer — no re-derivation.
+
+Default channel is `p2` (T2), default `maxDropPct` is `5` (percent points).
+On the canonical fixture this yields PASS at 4.8055 % drop. Tightening the
+allowed drop to `4` yields FAIL; setting target pressure to `315` switches
+the reference and produces 4.7962 %.
+
+No chart, PDF, or CSV in this slice — they are upcoming PRs and will all
+consume the same `HoldPeriodResult` so dashboard, exports, and reports
+cannot disagree on numbers.
+
+See [docs/development/ui-file-upload-summary.md](docs/development/ui-file-upload-summary.md).
+
 ## Migration roadmap
 
 1. ~~Bootstrap structure~~ (done)
 2. ~~Preview / smoke / fixture integrity harness~~ (done)
 3. ~~Pure-TypeScript parser in `src/domain/ihpuParser.ts` + Vitest coverage against `test-data/Dekk test Seal T.2`~~ (done)
 4. ~~Pressure analysis + hold-period evaluation~~ (done)
-5. Chart wiring
-6. CSV / PDF reports (must consume `HoldPeriodResult`, never re-derive numbers)
-7. UI polish, app icon, signed installer
+5. ~~File upload + summary UI~~ (done)
+6. Chart wiring (consumes `PressureDropResult` / `HoldPeriodResult`)
+7. CSV / PDF reports (must consume `HoldPeriodResult`, never re-derive numbers)
+8. UI polish, app icon, signed installer
