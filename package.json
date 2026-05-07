@@ -1,0 +1,46 @@
+{
+  "name": "ihpu-trykkanalyse",
+  "version": "0.1.0",
+  "private": true,
+  "description": "IHPU TrykkAnalyse — pressure test analysis desktop app",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && npm run build:electron && electron .\"",
+    "build": "tsc -b && vite build && npm run build:electron",
+    "test": "vitest run",
+    "dist": "npm run test && npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.ihpu.trykkanalyse",
+    "productName": "IHPU TrykkAnalyse",
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  },
+  "dependencies": {
+    "chart.js": "^4.4.1",
+    "chartjs-adapter-date-fns": "^3.0.0",
+    "chartjs-plugin-zoom": "^2.0.1",
+    "date-fns": "^3.6.0",
+    "hammerjs": "^2.0.8",
+    "jspdf": "^2.5.1",
+    "papaparse": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/papaparse": "^5.3.14",
+    "concurrently": "^8.2.2",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11",
+    "vitest": "^1.6.0",
+    "wait-on": "^7.2.0"
+  }
+}

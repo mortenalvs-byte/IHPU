@@ -1,0 +1,3240 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IHPU Trykktestanalyse</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.0/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;600;700;900&display=swap');
+
+  :root {
+    --bg: #0a0e17;
+    --panel: #0f1520;
+    --panel2: #141c2e;
+    --border: #1e2d47;
+    --accent1: #00c8ff;
+    --accent2: #ff6b35;
+    --accent3: #39d353;
+    --accent4: #ffd700;
+    --text: #c8d8e8;
+    --text-dim: #5a7a9a;
+    --text-bright: #eaf4ff;
+    --danger: #ff3b5c;
+    --mono: 'Share Tech Mono', monospace;
+    --sans: 'Barlow', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid scanlines overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,200,255,0.015) 2px,
+      rgba(0,200,255,0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 32px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(90deg, #0a0e17 0%, #0d1525 50%, #0a0e17 100%);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(8px);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 38px;
+    height: 38px;
+    border: 2px solid var(--accent1);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent1);
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: bold;
+    box-shadow: 0 0 12px rgba(0,200,255,0.3);
+  }
+
+  .logo-text {
+    font-size: 20px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    color: var(--text-bright);
+    text-transform: uppercase;
+  }
+
+  .logo-sub {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    letter-spacing: 1px;
+  }
+
+  .header-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+
+  .status-dot.active {
+    background: var(--accent3);
+    box-shadow: 0 0 8px var(--accent3);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  main {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 24px 24px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 40px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    margin-bottom: 24px;
+    background: var(--panel);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent1);
+    background: rgba(0,200,255,0.05);
+    box-shadow: 0 0 30px rgba(0,200,255,0.1);
+  }
+
+  .upload-icon {
+    font-size: 40px;
+    margin-bottom: 12px;
+    opacity: 0.6;
+  }
+
+  .upload-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin-bottom: 6px;
+  }
+
+  .upload-sub {
+    font-size: 13px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+  }
+
+  #fileInput { display: none; }
+
+  /* File list */
+  .file-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .file-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid;
+    font-family: var(--mono);
+    font-size: 12px;
+    animation: chipIn 0.3s ease;
+  }
+
+  @keyframes chipIn {
+    from { opacity: 0; transform: scale(0.8); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+
+  .file-chip .remove-btn {
+    background: rgba(255,59,92,0.15);
+    border: 1px solid rgba(255,59,92,0.4);
+    border-radius: 4px;
+    cursor: pointer;
+    color: #ff3b5c;
+    font-size: 12px;
+    font-weight: bold;
+    line-height: 1;
+    padding: 2px 6px;
+    margin-left: 4px;
+    transition: all 0.2s;
+  }
+
+  .file-chip .remove-btn:hover {
+    background: rgba(255,59,92,0.35);
+    border-color: #ff3b5c;
+    box-shadow: 0 0 8px rgba(255,59,92,0.3);
+  }
+
+  /* Color classes for files */
+  .fc0 { border-color: var(--accent1); color: var(--accent1); background: rgba(0,200,255,0.08); }
+  .fc1 { border-color: var(--accent2); color: var(--accent2); background: rgba(255,107,53,0.08); }
+  .fc2 { border-color: var(--accent3); color: var(--accent3); background: rgba(57,211,83,0.08); }
+  .fc3 { border-color: var(--accent4); color: var(--accent4); background: rgba(255,215,0,0.08); }
+  .fc4 { border-color: #b060ff; color: #b060ff; background: rgba(176,96,255,0.08); }
+
+  /* Controls bar */
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 20px;
+    align-items: center;
+  }
+
+  .ctrl-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+  }
+
+  .ctrl-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+
+  select, input[type="number"] {
+    background: var(--bg);
+    color: var(--text-bright);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  select:focus, input[type="number"]:focus {
+    border-color: var(--accent1);
+  }
+
+  .btn {
+    padding: 8px 18px;
+    border-radius: 6px;
+    border: 1px solid;
+    cursor: pointer;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .btn-primary {
+    background: rgba(0,200,255,0.15);
+    border-color: var(--accent1);
+    color: var(--accent1);
+  }
+  .btn-primary:hover {
+    background: rgba(0,200,255,0.3);
+    box-shadow: 0 0 15px rgba(0,200,255,0.3);
+  }
+
+  .btn-success {
+    background: rgba(57,211,83,0.12);
+    border-color: var(--accent3);
+    color: var(--accent3);
+  }
+  .btn-success:hover {
+    background: rgba(57,211,83,0.25);
+    box-shadow: 0 0 15px rgba(57,211,83,0.2);
+  }
+
+  .btn-warn {
+    background: rgba(255,107,53,0.12);
+    border-color: var(--accent2);
+    color: var(--accent2);
+  }
+  .btn-warn:hover { background: rgba(255,107,53,0.25); }
+
+  /* Stats grid */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px; height: 100%;
+    background: var(--card-accent, var(--accent1));
+  }
+
+  .stat-card:hover {
+    border-color: var(--card-accent, var(--accent1));
+  }
+
+  .stat-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 6px;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: bold;
+    color: var(--text-bright);
+    line-height: 1.2;
+  }
+
+  .stat-unit {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-left: 4px;
+  }
+
+  .stat-sub {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    margin-top: 4px;
+  }
+
+  /* Chart containers */
+  .chart-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+
+  .chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .chart-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-bright);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .chart-title::before {
+    content: '';
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent1);
+    box-shadow: 0 0 8px var(--accent1);
+  }
+
+  .chart-wrap {
+    position: relative;
+    width: 100%;
+  }
+
+  canvas { max-width: 100%; }
+
+  /* Two col layout */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 20px;
+  }
+
+  @media (max-width: 900px) {
+    .two-col { grid-template-columns: 1fr; }
+    header { padding: 12px 16px; }
+    main { padding: 16px; }
+  }
+
+  /* Range selector */
+  .range-selector {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 80px 20px;
+    color: var(--text-dim);
+  }
+
+  .empty-state .big-icon { font-size: 64px; margin-bottom: 16px; opacity: 0.3; }
+  .empty-state h3 { font-size: 20px; margin-bottom: 8px; color: var(--text); }
+  .empty-state p { font-family: var(--mono); font-size: 13px; }
+
+  /* Separator line */
+  .section-sep {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 0 20px;
+  }
+
+  .section-sep .sep-label {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    white-space: nowrap;
+  }
+
+  .section-sep .sep-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Toggle switches */
+  .toggle-group {
+    display: flex;
+    gap: 6px;
+  }
+
+  .toggle-btn {
+    padding: 4px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .toggle-btn.active {
+    border-color: var(--accent1);
+    color: var(--accent1);
+    background: rgba(0,200,255,0.1);
+  }
+
+  /* Pressure drop highlight */
+  .drop-highlight {
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-weight: bold;
+  }
+
+  .drop-ok { background: rgba(57,211,83,0.15); color: var(--accent3); }
+  .drop-warn { background: rgba(255,215,0,0.15); color: var(--accent4); }
+  .drop-bad { background: rgba(255,59,92,0.15); color: var(--danger); }
+
+  /* Table */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .data-table th {
+    text-align: left;
+    padding: 10px 14px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel2);
+  }
+
+  .data-table td {
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(30,45,71,0.5);
+    color: var(--text);
+  }
+
+  .data-table tr:hover td { background: rgba(0,200,255,0.04); }
+
+  .table-wrap {
+    max-height: 300px;
+    overflow-y: auto;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+
+  .table-wrap::-webkit-scrollbar { width: 6px; }
+  .table-wrap::-webkit-scrollbar-track { background: var(--panel); }
+  .table-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* Annotation marker */
+  .annotation {
+    position: absolute;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--accent4);
+    pointer-events: none;
+  }
+
+  /* Loading */
+  .loading {
+    display: none;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    padding: 20px;
+    color: var(--accent1);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+
+  .loading.show { display: flex; }
+
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent1);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Regression line toggle */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-family: var(--mono);
+    background: rgba(0,200,255,0.1);
+    color: var(--accent1);
+    border: 1px solid rgba(0,200,255,0.3);
+  }
+
+  select option { background: #0f1520; }
+
+  .rov-btn {
+    padding: 7px 22px;
+    border-radius: 6px;
+    border: 1px solid #1e2d47;
+    background: transparent;
+    color: #5a7a9a;
+    font-family: var(--mono);
+    font-weight: bold;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .rov-btn.selected {
+    border-color: #00c8ff;
+    color: #00c8ff;
+    background: rgba(0,200,255,0.12);
+    box-shadow: 0 0 10px rgba(0,200,255,0.2);
+  }
+
+
+  /* Drag selection overlay on chart */
+  .chart-drag-overlay {
+    position: absolute;
+    top: 0; bottom: 0;
+    background: rgba(255,215,0,0.15);
+    border-left: 2px solid rgba(255,215,0,0.8);
+    border-right: 2px solid rgba(255,215,0,0.8);
+    pointer-events: none;
+    display: none;
+    z-index: 10;
+  }
+  .chart-wrap { position: relative; cursor: crosshair; }
+
+
+  /* ── Rapport modal ─────────────────────────── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  .modal-overlay.open { display: flex; }
+
+  .modal-box {
+    background: #0f1520;
+    border: 1px solid #1e2d47;
+    border-radius: 14px;
+    padding: 32px;
+    width: 560px;
+    max-width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  }
+
+  .modal-box::-webkit-scrollbar { width: 5px; }
+  .modal-box::-webkit-scrollbar-thumb { background: #1e2d47; border-radius: 3px; }
+
+  .modal-title {
+    font-size: 18px;
+    font-weight: 900;
+    color: #eaf4ff;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .modal-sub {
+    font-size: 12px;
+    color: #5a7a9a;
+    font-family: var(--mono);
+    margin-bottom: 24px;
+  }
+
+  .form-row {
+    margin-bottom: 14px;
+  }
+  .form-label {
+    display: block;
+    font-size: 10px;
+    color: #5a7a9a;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 5px;
+  }
+  .form-input {
+    width: 100%;
+    background: #0a0e17;
+    color: #eaf4ff;
+    border: 1px solid #1e2d47;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-input:focus { border-color: #00c8ff; }
+
+  .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+
+  .pass-fail-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .pass-btn {
+    padding: 10px;
+    border-radius: 6px;
+    border: 2px solid;
+    background: transparent;
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+  }
+  .pass-btn.pass { border-color: #39d353; color: #39d353; }
+  .pass-btn.pass.selected { background: rgba(57,211,83,0.2); box-shadow: 0 0 12px rgba(57,211,83,0.3); }
+  .pass-btn.fail { border-color: #ff3b5c; color: #ff3b5c; }
+  .pass-btn.fail.selected { background: rgba(255,59,92,0.2); box-shadow: 0 0 12px rgba(255,59,92,0.3); }
+
+  .modal-footer {
+    display: flex;
+    gap: 10px;
+    margin-top: 24px;
+    justify-content: flex-end;
+  }
+
+  .form-section-label {
+    font-size: 10px;
+    color: #00c8ff;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin: 20px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #1e2d47;
+  }
+
+
+  /* Holdperiode */
+  .hold-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-left: 3px solid var(--accent4);
+  }
+
+  .hold-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .hold-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent4);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .hold-title::before {
+    content: '';
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent4);
+    box-shadow: 0 0 8px var(--accent4);
+  }
+
+  .hold-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .hold-result {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .hold-card {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    border-left: 3px solid var(--accent4);
+  }
+
+  .hold-card-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 5px;
+  }
+
+  .hold-card-value {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: bold;
+    color: var(--text-bright);
+  }
+
+  .hold-card-unit {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-left: 3px;
+  }
+
+  .hold-card-sub {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    margin-top: 3px;
+  }
+
+  .drag-hint {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    padding: 6px 12px;
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  .drag-hint.active {
+    color: var(--accent4);
+    border-color: var(--accent4);
+    background: rgba(255,215,0,0.06);
+  }
+
+  .hold-time-input {
+    background: var(--bg);
+    color: var(--text-bright);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    outline: none;
+    width: 90px;
+    transition: border-color 0.2s;
+  }
+  .hold-time-input:focus { border-color: var(--accent4); }
+
+  #holdClearBtn { display: none; }
+
+  .manual-panel {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+    padding: 18px 22px;
+    margin-bottom: 20px;
+    border-left: 3px solid var(--accent2);
+  }
+  .manual-panel.collapsed .manual-body { display: none; }
+  .manual-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .manual-input {
+    background: var(--bg);
+    color: var(--text-bright);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    outline: none;
+    width: 100%;
+    transition: border-color 0.2s;
+  }
+  .manual-input:focus { border-color: var(--accent2); }
+  .manual-rows-wrap {
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 10px;
+  }
+  .manual-rows-wrap::-webkit-scrollbar { width: 5px; }
+  .manual-rows-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .ref-line-label {
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">HP</div>
+    <div>
+      <div class="logo-text">IHPU Analyse</div>
+      <div class="logo-sub">Trykktestdata // Pressure Analysis v1.0</div>
+    </div>
+  </div>
+  <div class="header-status">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">Ingen data lastet</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Upload -->
+  <div class="upload-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+    <div class="upload-icon">📂</div>
+    <div class="upload-title">Last opp trykktestfiler</div>
+    <div class="upload-sub">Dra og slipp filer her, eller klikk for å velge • Tab-separert tekstformat støttet</div>
+    <input type="file" id="fileInput" multiple accept=".txt,.csv,.dat,.tsv">
+  </div>
+
+  <div class="file-list" id="fileList"></div>
+
+  <!-- Manuell inntasting -->
+  <div class="manual-panel collapsed" id="manualPanel">
+    <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleManualPanel()">
+      <div style="font-size:13px;font-weight:700;color:var(--accent2);text-transform:uppercase;letter-spacing:1.5px;display:flex;align-items:center;gap:8px">
+        <span style="width:10px;height:10px;border-radius:50%;background:var(--accent2);box-shadow:0 0 8px var(--accent2);display:inline-block"></span>
+        Manuell datainntasting
+      </div>
+      <span id="manualToggleIcon" style="color:var(--text-dim);font-family:var(--mono);font-size:12px">▼ Åpne</span>
+    </div>
+    <div class="manual-body" style="margin-top:16px">
+
+      <!-- Dato og filnavn -->
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <div class="ctrl-group">
+          <span class="ctrl-label">Dato</span>
+          <input type="text" id="manualDate" class="manual-input" placeholder="21.02.2026" style="width:115px">
+        </div>
+        <div class="ctrl-group">
+          <span class="ctrl-label">Filnavn</span>
+          <input type="text" id="manualFileName" class="manual-input" placeholder="manuell_test" style="width:150px">
+        </div>
+      </div>
+
+      <!-- Kolonne-headers -->
+      <div style="display:grid;grid-template-columns:36px 1.2fr 1fr 1fr 40px;gap:6px;margin-bottom:6px;padding:0 2px">
+        <div></div>
+        <div style="font-size:10px;color:var(--text-dim);font-family:var(--mono);text-transform:uppercase;letter-spacing:1px;text-align:center">Klokkeslett</div>
+        <div style="font-size:10px;color:var(--accent1);font-family:var(--mono);text-transform:uppercase;letter-spacing:1px;text-align:center">T1 (bar)</div>
+        <div style="font-size:10px;color:var(--accent1);font-family:var(--mono);text-transform:uppercase;letter-spacing:1px;text-align:center;opacity:0.6">T2 (bar)</div>
+        <div></div>
+      </div>
+
+      <!-- Rader -->
+      <div id="manualRows" style="display:flex;flex-direction:column;gap:5px;max-height:300px;overflow-y:auto;padding-right:2px"></div>
+
+      <!-- Feedback -->
+      <div id="manualFeedback" style="font-family:var(--mono);font-size:11px;margin-top:10px;min-height:16px;color:var(--text-dim)"></div>
+
+      <!-- Knapper -->
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn btn-warn" onclick="addManualRow()">+ Legg til rad</button>
+        <button class="btn btn-success" onclick="commitManualData()">✓ Legg til i analyse</button>
+        <button class="btn" style="border-color:var(--border);color:var(--text-dim)" onclick="clearManualData()">✕ Nullstill</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    Analyserer data...
+  </div>
+
+  <!-- Empty state -->
+  <div class="empty-state" id="emptyState">
+    <div class="big-icon">📊</div>
+    <h3>Ingen data lastet inn ennå</h3>
+    <p>Last opp en eller flere IHPU trykktestfiler for å starte analysen</p>
+  </div>
+
+  <!-- Dashboard (hidden until data loaded) -->
+  <div id="dashboard" style="display:none">
+
+
+    <!-- Brukerguide -->
+    <div id="userGuide" style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 22px;margin-bottom:20px;border-left:3px solid var(--accent1);position:relative;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-size:13px;font-weight:700;color:var(--accent1);text-transform:uppercase;letter-spacing:1.5px;display:flex;align-items:center;gap:8px">
+          <span style="width:10px;height:10px;border-radius:50%;background:var(--accent1);box-shadow:0 0 8px var(--accent1);display:inline-block"></span>
+          Brukerguide
+        </div>
+        <button onclick="document.getElementById('userGuide').style.display='none'" style="background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-family:var(--mono);font-size:11px;padding:3px 10px;cursor:pointer">Skjul</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+
+        <div style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;border-top:2px solid var(--accent2)">
+          <div style="font-size:10px;color:var(--accent2);font-family:var(--mono);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px">① Juster tidsvindu</div>
+          <div style="font-size:12px;color:var(--text);line-height:1.6">Bruk <b style="color:var(--text-bright)">Fra / Til</b>-feltene (minutter) for å zoome inn på ønsket periode.<br>
+          Scroll i grafen for å zoome, og klikk <b style="color:var(--text-bright)">↺ Nullstill</b> for å gå tilbake.</div>
+        </div>
+
+        <div style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;border-top:2px solid var(--accent4)">
+          <div style="font-size:10px;color:var(--accent4);font-family:var(--mono);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px">② Velg holdperiode</div>
+          <div style="font-size:12px;color:var(--text);line-height:1.6"><b style="color:var(--text-bright)">Klikk og dra</b> i grafen for å markere holdperioden, eller fyll inn <b style="color:var(--text-bright)">Fra kl. / Til kl.</b> manuelt.</div>
+        </div>
+
+        <div style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;border-top:2px solid var(--accent3)">
+          <div style="font-size:10px;color:var(--accent3);font-family:var(--mono);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px">③ Fyll inn verdier</div>
+          <div style="font-size:12px;color:var(--text);line-height:1.6">For full analyse, fyll ut:
+            <ul style="margin:6px 0 0 14px;color:var(--text-dim);font-size:11px;line-height:1.8">
+              <li><b style="color:var(--text-bright)">Måltrykk</b> — referanse for % drop</li>
+              <li><b style="color:var(--text-bright)">Maks % drop</b> — grense for GODKJENT</li>
+              <li><b style="color:var(--text-bright)">Kanal</b> — T1 eller T2</li>
+            </ul>
+          </div>
+        </div>
+
+        <div style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;border-top:2px solid #b060ff">
+          <div style="font-size:10px;color:#b060ff;font-family:var(--mono);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px">④ Rapport PDF</div>
+          <div style="font-size:12px;color:var(--text);line-height:1.6">Klikk <b style="color:var(--text-bright)">📋 Kunderapport PDF</b> for å eksportere. Fyll ut kundenavn, prosjektnr., operatør og sett GODKJENT/IKKE GODKJENT.<br>
+          <span style="color:var(--text-dim);font-size:11px">Holdperiode-graf inkluderes automatisk hvis periode er valgt.</span></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls" id="controls">
+      <div class="ctrl-group">
+        <span class="ctrl-label">Kanal</span>
+        <div class="toggle-group">
+          <button class="toggle-btn active" id="btn-ch1" onclick="toggleChannel(1)">T1</button>
+          <button class="toggle-btn active" id="btn-ch2" onclick="toggleChannel(2)">T2</button>
+        </div>
+      </div>
+      <div class="ctrl-group">
+        <span class="ctrl-label">Fra</span>
+        <input type="number" id="rangeFrom" step="1" style="width:70px" onchange="applyRange()">
+        <span class="ctrl-label">min</span>
+      </div>
+      <div class="ctrl-group">
+        <span class="ctrl-label">Til</span>
+        <input type="number" id="rangeTo" step="1" style="width:70px" onchange="applyRange()">
+        <span class="ctrl-label">min</span>
+      </div>
+
+      <button class="btn btn-primary" onclick="resetRange()">↺ Nullstill</button>
+      <button class="btn btn-success" onclick="exportCSV()">⬇ Eksporter CSV</button>
+      <button class="btn btn-warn" onclick="openRapportModal()">📋 Kunderapport PDF</button>
+    </div>
+
+    <!-- Stats -->
+    <div class="section-sep">
+      <div class="sep-label">Statistikk</div>
+      <div class="sep-line"></div>
+    </div>
+
+    <div class="stats-grid" id="statsGrid"></div>
+
+
+    <!-- Holdperiode -->
+    <div class="section-sep">
+      <div class="sep-label">Holdperiode</div>
+      <div class="sep-line"></div>
+    </div>
+
+    <div class="hold-panel" id="holdPanel">
+      <div class="hold-header">
+        <div class="hold-title">Trykkholdtest</div>
+        <span class="drag-hint" id="dragHint">✦ Klikk og dra i grafen for å velge holdperiode</span>
+      </div>
+      <div class="hold-controls">
+        <div class="ctrl-group">
+          <span class="ctrl-label">Måltrykk</span>
+          <input type="number" id="holdTargetBar" step="1" placeholder="bar" style="width:80px" oninput="try{renderCharts();}catch(e){} renderHoldResult();">
+          <span class="ctrl-label">bar</span>
+        </div>
+        <div class="ctrl-group">
+          <span class="ctrl-label">Fra kl.</span>
+          <input type="text" id="holdFrom" placeholder="15:49:44" maxlength="8" class="hold-time-input" oninput="applyHoldFromTime()" style="width:82px;letter-spacing:1px">
+        </div>
+        <div class="ctrl-group">
+          <span class="ctrl-label">Til kl.</span>
+          <input type="text" id="holdTo" placeholder="16:45:00" maxlength="8" class="hold-time-input" oninput="applyHoldFromTime()" style="width:82px;letter-spacing:1px">
+        </div>
+        <div class="ctrl-group">
+          <span class="ctrl-label">Kanal</span>
+          <select id="holdChannel" onchange="renderHoldResult()" style="width:60px">
+            <option value="p1">T1</option>
+            <option value="p2">T2</option>
+          </select>
+        </div>
+        <div class="ctrl-group">
+          <span class="ctrl-label">Maks % drop</span>
+          <input type="number" id="holdMaxPct" step="0.1" placeholder="%" style="width:70px" oninput="renderHoldResult();">
+          <span class="ctrl-label">%</span>
+        </div>
+        <!-- Hurtigknapper holdperiode -->
+        <div class="ctrl-group" style="gap:5px">
+          <span class="ctrl-label">Sett fra start:</span>
+          <button class="btn btn-primary" style="padding:4px 10px;font-size:11px" onclick="setHoldDuration(5)" title="Hold fra nåværende startpunkt i 5 min">5 min</button>
+          <button class="btn btn-primary" style="padding:4px 10px;font-size:11px" onclick="setHoldDuration(10)" title="Hold fra nåværende startpunkt i 10 min">10 min</button>
+          <button class="btn btn-primary" style="padding:4px 10px;font-size:11px" onclick="setHoldDuration(15)" title="Hold fra nåværende startpunkt i 15 min">15 min</button>
+          <button class="btn btn-primary" style="padding:4px 10px;font-size:11px" onclick="setHoldDuration(30)" title="Hold fra nåværende startpunkt i 30 min">30 min</button>
+        </div>
+
+        <button class="btn btn-primary" onclick="clearHold()" id="holdClearBtn">✕ Nullstill</button>
+      </div>
+      <div class="hold-result" id="holdResult">
+        <div style="color:var(--text-dim);font-family:var(--mono);font-size:13px;grid-column:1/-1;padding:8px 0">
+          Fyll inn Måltrykk og/eller Maks % drop for å se resultat. Dra i grafen for å avgrense periode.
+        </div>
+      </div>
+    </div>
+
+    <!-- Main chart -->
+    <div class="chart-panel">
+      <div class="chart-header">
+        <div class="chart-title">Trykk over tid</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="badge" id="dataPointsBadge">0 datapunkt</span>
+          <button class="btn btn-primary" id="resetZoomBtn" onclick="resetZoom()" style="display:none;padding:4px 12px;font-size:11px">⟲ Nullstill zoom</button>
+        </div>
+      </div>
+      <div class="chart-wrap" id="mainChartWrap">
+        <div class="chart-drag-overlay" id="dragOverlay"></div>
+        <canvas id="mainChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Pressure drop table -->
+    <div class="chart-panel">
+      <div class="chart-header">
+        <div class="chart-title">Trykkfall­sammendrag</div>
+
+      </div>
+      <div id="dropSummaryContent">
+        <div style="color:var(--text-dim);font-family:var(--mono);font-size:13px;padding:20px 0">
+          Klikk "Beregn" for å analysere trykkfall for valgt tidsvindu.
+        </div>
+      </div>
+    </div>
+
+    <!-- Raw data table -->
+    <div class="chart-panel">
+      <div class="chart-header">
+        <div class="chart-title">Rådata (filtrert)</div>
+        <span class="badge" id="rowCountBadge">0 rader</span>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="rawTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Dato</th>
+              <th style="color:var(--accent1)">Klokkeslett</th>
+              <th>Min</th>
+              <th>T1 (bar)</th>
+              <th>T2 (bar)</th>
+            </tr>
+          </thead>
+          <tbody id="rawTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /dashboard -->
+
+<!-- Rapport modal -->
+<div class="modal-overlay" id="rapportModal">
+  <div class="modal-box">
+    <div class="modal-title">📋 Generer kunderapport</div>
+    <div class="modal-sub">Fyll inn feltene — rapporten eksporteres som PDF</div>
+
+    <div class="form-section-label">Prosjektinfo</div>
+    <div class="form-row-2">
+      <div class="form-row" style="margin:0">
+        <label class="form-label">Kundenavn</label>
+        <input class="form-input" id="rpt_kunde" placeholder="Statoil ASA">
+      </div>
+      <div class="form-row" style="margin:0">
+        <label class="form-label">Prosjektnummer</label>
+        <input class="form-input" id="rpt_prosjekt" placeholder="PRJ-2026-001">
+      </div>
+    </div>
+    <div class="form-row-2">
+      <div class="form-row" style="margin:0">
+        <label class="form-label">Sted / Lokasjon</label>
+        <input class="form-input" id="rpt_sted" placeholder="Stavanger">
+      </div>
+      <div class="form-row" style="margin:0">
+        <label class="form-label">Testdato</label>
+        <input class="form-input" id="rpt_dato" placeholder="21.02.2026">
+      </div>
+    </div>
+
+    <div class="form-section-label">Utstyr og personell</div>
+    <div class="form-row-2">
+      <div class="form-row" style="margin:0">
+        <label class="form-label">IHPU serienummer</label>
+        <input class="form-input" id="rpt_serial" placeholder="IHPU-2024-042">
+      </div>
+      <div class="form-row" style="margin:0">
+        <label class="form-label">Operatør</label>
+        <input class="form-input" id="rpt_operator" placeholder="Ola Nordmann">
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">ROV System</label>
+      <div style="display:flex;gap:10px;margin-top:4px">
+        <button type="button" class="rov-btn" id="rovC24" onclick="selectROV('C24')">C24</button>
+        <button type="button" class="rov-btn" id="rovC25" onclick="selectROV('C25')">C25</button>
+        <input class="form-input" id="rpt_rov_custom" placeholder="Annet (skriv inn)" style="flex:1">
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Kommentar / merknad</label>
+      <textarea class="form-input" id="rpt_kommentar" rows="2" placeholder="Testet under normale driftsforhold..."></textarea>
+    </div>
+
+    <div class="form-section-label">Testkriterium</div>
+    <div id="rpt_criteria_summary" style="background:#0a0e17;border:1px solid #1e2d47;border-radius:8px;padding:14px 16px;margin-bottom:14px;font-family:var(--mono);font-size:12px;line-height:2">
+      <span style="color:#5a7a9a">Henter verdier fra holdperiode-panelet...</span>
+    </div>
+
+
+    <div class="modal-footer">
+      <button class="btn" style="border-color:#1e2d47;color:#5a7a9a" onclick="closeRapportModal()">Avbryt</button>
+      <button class="btn btn-success" onclick="generatePDF()">⬇ Last ned PDF</button>
+    </div>
+  </div>
+</div>
+</main>
+
+<script>
+// ============================================================
+//  DATA STORE
+// ============================================================
+const FILES = [];   // { name, color, rows: [{t, t_min, p1, p2}] }
+let ch1On = true, ch2On = true;
+let mainChartInst;
+
+// ============================================================
+//  HOLD PERIOD
+// ============================================================
+let holdTsFrom = null, holdTsTo = null;
+let isDragging = false, dragStartX = null;
+
+function tsToTime(ts) {
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  const ss = String(d.getSeconds()).padStart(2,'0');
+  return hh + ':' + mm + ':' + ss;
+}
+
+function timeStrToTs(timeStr, refDate) {
+  // Accepts HH:MM or HH:MM:SS in 24h format
+  const m = timeStr.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  const base = new Date(refDate);
+  base.setHours(parseInt(m[1]), parseInt(m[2]), parseInt(m[3]||0), 0);
+  return base.getTime();
+}
+
+function applyHoldFromTime() {
+  const fromStr = document.getElementById('holdFrom').value.trim();
+  const toStr   = document.getElementById('holdTo').value.trim();
+  if (!FILES.length) return;
+
+  // Need at least HH:MM (5 chars)
+  if (fromStr.length < 5 || toStr.length < 5) return;
+
+  const refDate = FILES[0].rows[0].dt;
+  let ts1 = timeStrToTs(fromStr, refDate);
+  let ts2 = timeStrToTs(toStr,   refDate);
+  if (!ts1 || !ts2) return;
+
+  // Handle midnight crossing: if ts2 <= ts1, add one day to ts2
+  if (ts2 <= ts1) ts2 += 24 * 60 * 60 * 1000;
+  if (ts2 <= ts1) return;
+
+  holdTsFrom = ts1;
+  holdTsTo   = ts2;
+  renderCharts();
+  renderHoldResult();
+}
+
+function clearHold() {
+  holdTsFrom = holdTsTo = null;
+  document.getElementById('holdFrom').value = '';
+  document.getElementById('holdTo').value = '';
+  document.getElementById('holdClearBtn').style.display = 'none';
+  document.getElementById('dragHint').classList.remove('active');
+  document.getElementById('dragHint').textContent = '✦ Klikk og dra i grafen for å velge holdperiode';
+  document.getElementById('holdResult').innerHTML = '<div style="color:var(--text-dim);font-family:var(--mono);font-size:13px;grid-column:1/-1;padding:8px 0">Velg en holdperiode i grafen eller angi klokkeslett ovenfor.</div>';
+  renderCharts();
+}
+
+// ── Hurtigknapp: sett holdperiode N minutter fra gjeldende startpunkt ──
+function setHoldDuration(minutes) {
+  if (!FILES.length) return;
+  // Bruk eksisterende Fra-tidspunkt hvis satt, ellers start av data
+  const fromTs = holdTsFrom || Math.min(...FILES.map(f => f.rows[0]?.ts || Infinity));
+  const toTs   = fromTs + minutes * 60 * 1000;
+
+  holdTsFrom = fromTs;
+  holdTsTo   = toTs;
+  document.getElementById('holdFrom').value = tsToTime(holdTsFrom);
+  document.getElementById('holdTo').value   = tsToTime(holdTsTo);
+  document.getElementById('holdClearBtn').style.display = '';
+  document.getElementById('dragHint').classList.add('active');
+  document.getElementById('dragHint').textContent =
+    '⟵ ' + tsToTime(holdTsFrom) + '  →  ' + tsToTime(holdTsTo) + '  (' + minutes + ' min)';
+  renderCharts();
+  renderHoldResult();
+}
+
+// ── Auto-deteksjon: finn flateste vindu (lavest absolutt rate) ──
+function autoDetectHold() {
+  if (!FILES.length) return;
+  const minutes = parseFloat(document.getElementById('autoDetectMin').value) || 10;
+  const windowMs = minutes * 60 * 1000;
+  const ch = document.getElementById('holdChannel').value;
+
+  // Slå sammen alle rader, sorter på tid
+  let allRows = [];
+  FILES.forEach(f => {
+    f.rows.forEach(r => { if (r[ch] > 10) allRows.push(r); });
+  });
+  allRows.sort((a, b) => a.ts - b.ts);
+
+  if (allRows.length < 2) { alert('Ikke nok data for auto-deteksjon.'); return; }
+
+  // Filtrer til kun rader nær topptrykk (≥95% av maks) — unngår oppfyllingsfase og stabiliseringsfase
+  const maxP = Math.max(...allRows.map(r => r[ch]));
+  const threshold = maxP * 0.95;
+  const candidates = allRows.filter(r => r[ch] >= threshold);
+
+  if (candidates.length < 2) {
+    alert('Ikke nok data nær topptrykk. Prøv å justere holdperioden manuelt.');
+    return;
+  }
+
+  const dataSpan = candidates[candidates.length-1].ts - candidates[0].ts;
+  if (dataSpan < windowMs) {
+    alert('Perioden nær topptrykk er kortere enn ønsket vindu (' + minutes + ' min). Prøv et kortere vindu, eller juster manuelt.');
+    return;
+  }
+
+  let bestRate = Infinity;
+  let bestFrom = null;
+  let bestTo   = null;
+
+  // Glidende vindu kun på kandidatrader nær topptrykk
+  for (let i = 0; i < candidates.length; i++) {
+    const tStart = candidates[i].ts;
+    const tEnd   = tStart + windowMs;
+
+    let j = i;
+    while (j + 1 < candidates.length && candidates[j+1].ts <= tEnd) j++;
+    if (j === i) continue;
+
+    const pStart = candidates[i][ch];
+    const pEnd   = candidates[j][ch];
+    const durMin = (candidates[j].ts - candidates[i].ts) / 60000;
+    if (durMin < 0.5) continue;
+
+    const rate = Math.abs((pStart - pEnd) / durMin);
+    if (rate < bestRate) {
+      bestRate = rate;
+      bestFrom = candidates[i].ts;
+      bestTo   = candidates[j].ts;
+    }
+  }
+
+  if (bestFrom === null) { alert('Kunne ikke finne et stabilt segment.'); return; }
+
+  holdTsFrom = bestFrom;
+  holdTsTo   = bestTo;
+  document.getElementById('holdFrom').value = tsToTime(holdTsFrom);
+  document.getElementById('holdTo').value   = tsToTime(holdTsTo);
+  document.getElementById('holdClearBtn').style.display = '';
+  document.getElementById('dragHint').classList.add('active');
+
+  const durMin = ((holdTsTo - holdTsFrom) / 60000).toFixed(1);
+  document.getElementById('dragHint').textContent =
+    '⚡ Auto: ' + tsToTime(holdTsFrom) + '  →  ' + tsToTime(holdTsTo) +
+    '  (' + durMin + ' min)  —  rate: ' + bestRate.toFixed(4) + ' bar/min';
+
+  renderCharts();
+  renderHoldResult();
+}
+
+// ============================================================
+//  SHARED: get rows for a period, with interpolation for sparse data
+// ============================================================
+function getHoldRows(fileObj, ch, tsFrom, tsTo) {
+  let rows = fileObj.rows.filter(r => r.ts >= tsFrom && r.ts <= tsTo && r[ch] > 10);
+  if (rows.length >= 2) return rows;
+
+  const allValid = fileObj.rows.filter(r => r[ch] > 10);
+  const before   = allValid.filter(r => r.ts <= tsFrom);
+  const after    = allValid.filter(r => r.ts >= tsTo);
+  const inside   = allValid.filter(r => r.ts > tsFrom && r.ts < tsTo);
+  if (before.length === 0 && after.length === 0) return [];
+
+  function interp(p0, p1, ts) {
+    if (!p0 || !p1 || p0.ts === p1.ts) return p0 || p1;
+    const t  = (ts - p0.ts) / (p1.ts - p0.ts);
+    const pv = p0[ch] + t * (p1[ch] - p0[ch]);
+    const dt = new Date(ts);
+    return { ...p0, ts, dt, t_min: (ts - fileObj.rows[0].ts) / 60000, [ch]: pv };
+  }
+
+  const p0 = before.length ? before[before.length - 1] : null;
+  const p1 = after.length  ? after[0] : null;
+
+  let synStart, synEnd;
+  if (p0 && p1) {
+    synStart = interp(p0, p1, tsFrom);
+    synEnd   = interp(p0, p1, tsTo);
+  } else if (p0 && inside.length) {
+    synStart = interp(p0, inside[0], tsFrom);
+    synEnd   = inside[inside.length - 1];
+  } else if (p1 && inside.length) {
+    synStart = inside[0];
+    synEnd   = interp(inside[inside.length - 1], p1, tsTo);
+  } else if (p0 && p1 === null) {
+    // Only points before — use last two to extrapolate (flat line fallback)
+    synStart = p0;
+    synEnd   = { ...p0, ts: tsTo, dt: new Date(tsTo), t_min: (tsTo - fileObj.rows[0].ts)/60000 };
+  } else {
+    return [];
+  }
+
+  rows = [synStart, ...inside, synEnd];
+  return rows.length >= 2 ? rows : [];
+}
+
+function renderHoldResult() {
+  if (!FILES.length) return;
+
+  const ch     = document.getElementById('holdChannel').value;
+  const target = parseFloat(document.getElementById('holdTargetBar').value);
+  const maxPct = parseFloat(document.getElementById('holdMaxPct').value);
+  const el     = document.getElementById('holdResult');
+
+  // Use selected hold period, or fall back to full data range
+  const useFrom = holdTsFrom || Math.min(...FILES.map(f => f.rows[0]?.ts || Infinity));
+  const useTo   = holdTsTo   || Math.max(...FILES.map(f => f.rows[f.rows.length-1]?.ts || -Infinity));
+
+  let html = '';
+  FILES.forEach(f => {
+    const rows = getHoldRows(f, ch, useFrom, useTo);
+    if (rows.length < 2) return;
+
+    const pStart = rows[0][ch];
+    const pEnd   = rows[rows.length-1][ch];
+    const drop   = pStart - pEnd;
+    const durMin = (rows[rows.length-1].ts - rows[0].ts) / 60000;
+    const rate   = durMin > 0 ? drop / durMin : 0;
+    const rateH  = rate * 60;
+    const chLabel = ch === 'p1' ? 'T1' : 'T2';
+    const fname = FILES.length > 1 ? f.name.split('.')[0] + ' – ' : '';
+
+    // % drop based on target pressure, fallback to starttrykk
+    const pctRef = (!isNaN(target) && target > 0) ? target : pStart;
+    const dropPct = pctRef > 0 ? (drop / pctRef * 100) : null;
+
+    // Color based on maxPct if set, otherwise fallback to bar thresholds
+    let dropColor;
+    if (!isNaN(maxPct) && maxPct > 0 && dropPct !== null) {
+      dropColor = dropPct <= maxPct ? 'var(--accent3)' : 'var(--danger)';
+    } else {
+      dropColor = Math.abs(drop) < 1 ? 'var(--accent3)' : Math.abs(drop) < 5 ? 'var(--accent4)' : 'var(--danger)';
+    }
+
+    html += '<div class="hold-card"><div class="hold-card-label">' + fname + chLabel + ' Starttrykk</div>' +
+            '<div class="hold-card-value">' + pStart.toFixed(2) + '<span class="hold-card-unit">bar</span></div>' +
+            '<div class="hold-card-sub">' + fmtTime(rows[0].dt) + '</div></div>';
+
+    html += '<div class="hold-card"><div class="hold-card-label">' + fname + chLabel + ' Slutttrykk</div>' +
+            '<div class="hold-card-value">' + pEnd.toFixed(2) + '<span class="hold-card-unit">bar</span></div>' +
+            '<div class="hold-card-sub">' + fmtTime(rows[rows.length-1].dt) + '</div></div>';
+
+    const dropPctStr = dropPct !== null ? ' <span style="opacity:0.7;font-size:14px">(' + dropPct.toFixed(3) + '%)</span>' : '';
+    html += '<div class="hold-card" style="border-left-color:' + dropColor + '"><div class="hold-card-label">' + fname + 'Trykkfall</div>' +
+            '<div class="hold-card-value" style="color:' + dropColor + '">' + drop.toFixed(3) + '<span class="hold-card-unit">bar</span>' + dropPctStr + '</div>' +
+            '<div class="hold-card-sub">' + durMin.toFixed(1) + ' min • ' + rate.toFixed(4) + ' bar/min (' + rateH.toFixed(3) + ' bar/t)</div></div>';
+
+    // Pass/fail banner if maxPct is set
+    if (!isNaN(maxPct) && maxPct > 0 && dropPct !== null) {
+      const ok = dropPct <= maxPct;
+      const pfBg  = ok ? 'rgba(57,211,83,0.12)' : 'rgba(255,59,92,0.12)';
+      const pfCol = ok ? 'var(--accent3)' : 'var(--danger)';
+      const pfBorder = ok ? 'var(--accent3)' : 'var(--danger)';
+      html += '<div class="hold-card" style="border-left-color:' + pfBorder + ';background:' + pfBg + ';grid-column:1/-1">' +
+              '<div class="hold-card-label">Kriteriesjekk — maks ' + maxPct.toFixed(1) + '% drop</div>' +
+              '<div class="hold-card-value" style="color:' + pfCol + ';font-size:18px">' +
+              (ok ? '✓  GODKJENT' : '✗  IKKE GODKJENT') +
+              ' <span style="font-size:13px;opacity:0.8">(' + dropPct.toFixed(3) + '% av ' + maxPct.toFixed(1) + '% tillatt)</span></div></div>';
+    }
+
+    if (!isNaN(target)) {
+      const avvik = pStart - target;
+      html += '<div class="hold-card"><div class="hold-card-label">Avvik fra måltrykk</div>' +
+              '<div class="hold-card-value" style="color:' + (Math.abs(avvik)<2?'var(--accent3)':'var(--accent4)') + '">' +
+              (avvik >= 0 ? '+' : '') + avvik.toFixed(2) + '<span class="hold-card-unit">bar</span></div>' +
+              '<div class="hold-card-sub">Mål: ' + target.toFixed(0) + ' bar</div></div>';
+    }
+
+    html += '<div class="hold-card"><div class="hold-card-label">Varighet</div>' +
+            '<div class="hold-card-value">' + durMin.toFixed(1) + '<span class="hold-card-unit">min</span></div>' +
+            '<div class="hold-card-sub">' + rows.length + ' datapunkt</div></div>';
+  });
+
+  el.innerHTML = html || '<div style="color:var(--text-dim);font-family:var(--mono);font-size:13px;grid-column:1/-1">Ingen data i valgt periode.</div>';
+  document.getElementById('holdClearBtn').style.display = 'inline-flex';
+  document.getElementById('dragHint').classList.add('active');
+}
+
+// Chart drag-select for hold period
+let _chartDragAbort = null;
+function setupChartDrag(canvas) {
+  // Remove previous listeners before adding new ones
+  if (_chartDragAbort) _chartDragAbort.abort();
+  _chartDragAbort = new AbortController();
+  const sig = { signal: _chartDragAbort.signal };
+
+  let startPx = null;
+  const overlay = document.getElementById('dragOverlay');
+  const wrap    = document.getElementById('mainChartWrap');
+
+  canvas.addEventListener('mousedown', e => {
+    if (!mainChartInst) return;
+    const rect = canvas.getBoundingClientRect();
+    startPx = e.clientX - rect.left;
+    isDragging = true;
+    // Temporarily disable zoom pan so drag-select takes over
+    if (mainChartInst.options.plugins.zoom) {
+      mainChartInst.options.plugins.zoom.pan.enabled = false;
+      mainChartInst.update('none');
+    }
+    if (overlay) {
+      overlay.style.display = 'block';
+      overlay.style.left = startPx + 'px';
+      overlay.style.width = '0px';
+      overlay.style.top = (canvas.offsetTop) + 'px';
+      overlay.style.height = canvas.offsetHeight + 'px';
+    }
+  }, sig);
+
+  canvas.addEventListener('mousemove', e => {
+    if (!isDragging || startPx === null || !overlay) return;
+    const rect = canvas.getBoundingClientRect();
+    const curPx = e.clientX - rect.left;
+    const left  = Math.min(startPx, curPx);
+    const width = Math.abs(curPx - startPx);
+    overlay.style.left  = left + 'px';
+    overlay.style.width = width + 'px';
+
+    // Show live time feedback
+    if (mainChartInst) {
+      const xScale = mainChartInst.scales.x;
+      const ts1 = xScale.getValueForPixel(Math.min(startPx, curPx));
+      const ts2 = xScale.getValueForPixel(Math.max(startPx, curPx));
+      if (ts1 && ts2) {
+        document.getElementById('dragHint').textContent =
+          '⟵ ' + tsToTime(ts1) + '  →  ' + tsToTime(ts2) +
+          '  (' + ((ts2-ts1)/60000).toFixed(1) + ' min)';
+      }
+    }
+  }, sig);
+
+  function endDrag(e) {
+    if (!isDragging || startPx === null || !mainChartInst) return;
+    isDragging = false;
+    if (overlay) overlay.style.display = 'none';
+
+    const rect = canvas.getBoundingClientRect();
+    const endPx = (e.clientX || (e.changedTouches && e.changedTouches[0].clientX) || 0) - rect.left;
+    if (Math.abs(endPx - startPx) < 5) {
+      startPx = null;
+  
+      return;
+    }
+
+    const chart = mainChartInst;
+    const xScale = chart.scales.x;
+    const ts1 = xScale.getValueForPixel(Math.min(startPx, endPx));
+    const ts2 = xScale.getValueForPixel(Math.max(startPx, endPx));
+
+    holdTsFrom = ts1;
+    holdTsTo   = ts2;
+
+    document.getElementById('holdFrom').value = tsToTime(ts1);
+    document.getElementById('holdTo').value   = tsToTime(ts2);
+
+    renderCharts();
+    renderHoldResult();
+    startPx = null;
+  }
+
+  canvas.addEventListener('mouseup', endDrag, sig);
+  canvas.addEventListener('mouseleave', e => {
+    if (isDragging) endDrag(e);
+  }, sig);
+}
+
+
+
+const COLORS = [
+  { line: '#00c8ff', fill: 'rgba(0,200,255,0.08)' },
+  { line: '#ff6b35', fill: 'rgba(255,107,53,0.08)' },
+  { line: '#39d353', fill: 'rgba(57,211,83,0.08)' },
+  { line: '#ffd700', fill: 'rgba(255,215,0,0.08)' },
+  { line: '#b060ff', fill: 'rgba(176,96,255,0.08)' },
+];
+
+// ============================================================
+//  FILE UPLOAD
+// ============================================================
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+function handleFiles(fileList) {
+  document.getElementById('loading').classList.add('show');
+  let pending = fileList.length;
+  Array.from(fileList).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      parseFile(file.name, e.target.result);
+      pending--;
+      if (pending === 0) {
+        document.getElementById('loading').classList.remove('show');
+        renderAll();
+      }
+    };
+    reader.onerror = () => {
+      console.error('Kunne ikke lese fil:', file.name);
+      pending--;
+      if (pending === 0) {
+        document.getElementById('loading').classList.remove('show');
+        renderAll();
+      }
+    };
+    reader.readAsText(file);
+  });
+  fileInput.value = '';
+}
+
+function parseFile(name, text) {
+  // Check if already loaded
+  if (FILES.find(f => f.name === name)) return;
+
+  const lines = text.trim().split('\n');
+  const rows = [];
+  let t0 = null;
+
+  lines.forEach((line, lineIdx) => {
+    const parts = line.trim().split(/\t/);
+    if (parts.length < 3) return;
+
+    // Auto-detect: if first col is a number (row index), skip it
+    let offset = 0;
+    if (!isNaN(parseInt(parts[0])) && parts.length >= 4) {
+      offset = 1;
+    }
+
+    const dtStr = parts[offset].trim();
+    const p1 = parseFloat(parts[offset + 1]);
+    const p2 = parseFloat(parts[offset + 2]);
+
+    if (isNaN(p1) || isNaN(p2)) return;
+
+    // Parse datetime dd.mm.yyyy hh:mm:ss
+    const dtMatch = dtStr.match(/(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}:\d{2}:\d{2})/);
+    if (!dtMatch) return;
+    const [, d, m, y, time] = dtMatch;
+    const dt = new Date(`${y}-${m}-${d}T${time}`);
+    if (isNaN(dt)) return;
+
+    if (t0 === null) t0 = dt;
+    const t_min = (dt - t0) / 60000;
+    const idx = lineIdx + 1;
+
+    rows.push({ idx, dt, dtStr, t_min, p1, p2, ts: dt.getTime() });
+  });
+
+  if (rows.length === 0) return;
+
+  const colorIdx = FILES.length % COLORS.length;
+  FILES.push({ name, color: COLORS[colorIdx], colorClass: `fc${colorIdx}`, rows });
+}
+
+// ============================================================
+//  FILE CHIPS
+// ============================================================
+function renderFileChips() {
+  const el = document.getElementById('fileList');
+  el.innerHTML = '';
+  FILES.forEach((f, i) => {
+    const chip = document.createElement('div');
+    chip.className = `file-chip ${f.colorClass}`;
+    const isManual = f.name.endsWith('.manuell');
+    chip.innerHTML = `<span>${isManual ? '✏️' : '📄'} ${f.name}</span><span style="opacity:0.4">|</span><span style="opacity:0.7">${f.rows.length} pkt</span>
+      ${isManual ? `<button class="remove-btn" title="Rediger" style="background:rgba(0,200,255,0.1);border-color:rgba(0,200,255,0.4);color:var(--accent1)" onclick="editManualFile(${i})">✎ Rediger</button>` : ''}
+      <button class="remove-btn" title="Fjern fil" onclick="removeFile(${i})">✕</button>`;
+    el.appendChild(chip);
+  });
+}
+
+function removeFile(idx) {
+  // If editing this file, cancel edit
+  if (_editingFileIdx === idx) {
+    _editingFileIdx = null;
+    clearManualData();
+  } else if (_editingFileIdx !== null && _editingFileIdx > idx) {
+    _editingFileIdx--; // shift index down
+  }
+  FILES.splice(idx, 1);
+  document.getElementById('rangeFrom').value = '';
+  document.getElementById('rangeTo').value = '';
+  clearHold();
+  renderAll();
+}
+
+// ============================================================
+//  RANGE + FILTERING
+// ============================================================
+function getRange() {
+  const from = parseFloat(document.getElementById('rangeFrom').value) || 0;
+  const to   = parseFloat(document.getElementById('rangeTo').value) || 99999;
+  return { from, to };
+}
+
+function getFilteredRows(fileObj) {
+  const { from, to } = getRange();
+  return fileObj.rows.filter(r => r.t_min >= from && r.t_min <= to);
+}
+
+function applyRange() { renderAll(); }
+function resetRange() {
+  document.getElementById('rangeFrom').value = '';
+  document.getElementById('rangeTo').value = '';
+  renderAll();
+}
+
+function initRange() {
+  if (FILES.length === 0) return;
+  const maxMin = Math.max(...FILES.map(f => f.rows[f.rows.length-1]?.t_min || 0));
+  document.getElementById('rangeTo').value = Math.ceil(maxMin);
+  document.getElementById('rangeFrom').value = 0;
+}
+
+// ============================================================
+//  STATISTICS
+// ============================================================
+function stats(arr) {
+  if (!arr.length) return null;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+  const variance = arr.reduce((s, v) => s + (v - mean) ** 2, 0) / arr.length;
+  const std = Math.sqrt(variance);
+  const q1 = sorted[Math.floor(sorted.length * 0.25)];
+  const q3 = sorted[Math.floor(sorted.length * 0.75)];
+  return {
+    min: sorted[0], max: sorted[sorted.length-1],
+    mean, std, q1, q3,
+    first: arr[0], last: arr[arr.length-1],
+    n: arr.length
+  };
+}
+
+
+
+function updateStats() {
+  const grid = document.getElementById('statsGrid');
+  if (!FILES.length) { grid.innerHTML = ''; return; }
+
+  const cards = [];
+
+  FILES.forEach((f, fi) => {
+    const rows = getFilteredRows(f);
+    if (!rows.length) return;
+
+    const p1vals = rows.filter(v => v.p1 > 10);  // filtered rows with valid p1
+    const p2vals = rows.filter(v => v.p2 > 10);  // filtered rows with valid p2
+    const tVals  = rows.map(r => r.t_min);
+    const durMin = tVals[tVals.length-1] - tVals[0];
+
+    const s1 = stats(p1vals.map(r => r.p1));
+    const s2 = stats(p2vals.map(r => r.p2));
+
+    const label = FILES.length > 1 ? ` [${f.name.split('.')[0]}]` : '';
+    const accentCSS = `--card-accent: ${f.color.line}`;
+
+    if (ch1On && s1) {
+      const drop1 = s1.first - s1.last;
+      const dropRate = durMin > 0 ? drop1 / durMin : 0;
+      cards.push(`
+        <div class="stat-card" style="${accentCSS}">
+          <div class="stat-label">T1 Starttrykk${label}</div>
+          <div class="stat-value">${s1.first.toFixed(2)}<span class="stat-unit">bar</span></div>
+          <div class="stat-sub">${fmtTime(p1vals[0].dt)}</div>
+          <div class="stat-sub" style="opacity:0.6">${p1vals[0].t_min.toFixed(1)} min</div>
+        </div>
+        <div class="stat-card" style="${accentCSS}">
+          <div class="stat-label">T1 Slutttrykk${label}</div>
+          <div class="stat-value">${s1.last.toFixed(2)}<span class="stat-unit">bar</span></div>
+          <div class="stat-sub">${fmtTime(p1vals[p1vals.length-1].dt)}</div>
+          <div class="stat-sub" style="opacity:0.6">${p1vals[p1vals.length-1].t_min.toFixed(1)} min</div>
+        </div>
+        <div class="stat-card" style="${accentCSS}">
+          <div class="stat-label">T1 Trykkfall${label}</div>
+          <div class="stat-value">${drop1.toFixed(2)}<span class="stat-unit">bar</span></div>
+          <div class="stat-sub">${dropRate.toFixed(3)} bar/min</div>
+        </div>
+        <div class="stat-card" style="${accentCSS}">
+          <div class="stat-label">T1 Min / Maks${label}</div>
+          <div class="stat-value">${s1.min.toFixed(1)}<span class="stat-unit"> / ${s1.max.toFixed(1)} bar</span></div>
+          <div class="stat-sub">σ = ${s1.std.toFixed(3)}</div>
+        </div>
+      `);
+    }
+
+    if (ch2On && s2) {
+      const drop2 = s2.first - s2.last;
+      const dropRate2 = durMin > 0 ? drop2 / durMin : 0;
+      cards.push(`
+        <div class="stat-card" style="--card-accent:${f.color.line}aa">
+          <div class="stat-label">T2 Starttrykk${label}</div>
+          <div class="stat-value">${s2.first.toFixed(2)}<span class="stat-unit">bar</span></div>
+          <div class="stat-sub">${fmtTime(p2vals[0].dt)}</div>
+          <div class="stat-sub" style="opacity:0.6">${p2vals[0].t_min.toFixed(1)} min</div>
+        </div>
+        <div class="stat-card" style="--card-accent:${f.color.line}aa">
+          <div class="stat-label">T2 Slutttrykk${label}</div>
+          <div class="stat-value">${s2.last.toFixed(2)}<span class="stat-unit">bar</span></div>
+          <div class="stat-sub">${fmtTime(p2vals[p2vals.length-1].dt)}</div>
+          <div class="stat-sub" style="opacity:0.6">${p2vals[p2vals.length-1].t_min.toFixed(1)} min</div>
+        </div>
+        <div class="stat-card" style="--card-accent:${f.color.line}aa">
+          <div class="stat-label">T2 Trykkfall${label}</div>
+          <div class="stat-value">${drop2.toFixed(2)}<span class="stat-unit">bar</span></div>
+          <div class="stat-sub">${dropRate2.toFixed(3)} bar/min</div>
+        </div>
+        <div class="stat-card" style="--card-accent:${f.color.line}aa">
+          <div class="stat-label">T2 Min / Maks${label}</div>
+          <div class="stat-value">${s2.min.toFixed(1)}<span class="stat-unit"> / ${s2.max.toFixed(1)} bar</span></div>
+          <div class="stat-sub">σ = ${s2.std.toFixed(3)}</div>
+        </div>
+      `);
+    }
+
+    cards.push(`
+      <div class="stat-card" style="--card-accent:#8899bb">
+        <div class="stat-label">Varighet${label}</div>
+        <div class="stat-value">${durMin.toFixed(1)}<span class="stat-unit">min</span></div>
+        <div class="stat-sub">${fmtTime(rows[0].dt)} → ${fmtTime(rows[rows.length-1].dt)}</div>
+        <div class="stat-sub">${rows.length} datapunkt</div>
+      </div>
+    `);
+  });
+
+  grid.innerHTML = cards.join('');
+}
+
+// ============================================================
+//  CHARTS
+// ============================================================
+function fmtTime(dt) {
+  return dt.toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+function fmtDate(dt) { return dt.toLocaleDateString('no-NO'); }
+function fmtDateTime(dt) { return fmtDate(dt) + '  ' + fmtTime(dt); }
+
+const chartDefaults = {
+  responsive: true,
+  interaction: { mode: 'index', intersect: false },
+  plugins: {
+    legend: {
+      labels: { color: '#c8d8e8', font: { family: 'Share Tech Mono', size: 11 }, boxWidth: 16, padding: 16 }
+    },
+    tooltip: {
+      backgroundColor: '#0f1520',
+      borderColor: '#1e2d47',
+      borderWidth: 1,
+      titleColor: '#eaf4ff',
+      bodyColor: '#c8d8e8',
+      titleFont: { family: 'Share Tech Mono', size: 12 },
+      bodyFont: { family: 'Share Tech Mono', size: 11 },
+      callbacks: {
+        title: items => {
+          const ts = items[0]?.parsed?.x;
+          return ts ? fmtDateTime(new Date(ts)) : '';
+        },
+        label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(3)} bar`
+      }
+    }
+  },
+  scales: {
+    x: {
+      type: 'time',
+      time: { unit: 'minute', displayFormats: { minute: 'HH:mm', second: 'HH:mm:ss' } },
+      title: { display: true, text: 'Klokkeslett / Minutter fra start', color: '#5a7a9a', font: { family: 'Share Tech Mono', size: 11 } },
+      ticks: {
+        color: '#5a7a9a',
+        font: { family: 'Share Tech Mono', size: 10 },
+        maxTicksLimit: 12,
+        maxRotation: 0,
+        callback: function(value, index, ticks) {
+          const d = new Date(value);
+          const hh = String(d.getHours()).padStart(2,'0');
+          const mm = String(d.getMinutes()).padStart(2,'0');
+          const ss = String(d.getSeconds()).padStart(2,'0');
+          // Compute minutes from global t0
+          let minStr = '';
+          if (window._chartT0) {
+            const elapsed = (value - window._chartT0) / 60000;
+            minStr = '(+' + elapsed.toFixed(1) + ' min)';
+          }
+          return [hh + ':' + mm + ':' + ss, minStr];
+        }
+      },
+      grid: { color: 'rgba(30,45,71,0.6)' }
+    },
+    y: {
+      title: { display: true, text: 'Trykk (bar)', color: '#5a7a9a', font: { family: 'Share Tech Mono', size: 11 } },
+      ticks: { color: '#5a7a9a', font: { family: 'Share Tech Mono', size: 10 } },
+      grid: { color: 'rgba(30,45,71,0.6)' }
+    }
+  },
+  elements: { point: { radius: 0, hoverRadius: 4 }, line: { tension: 0.1 } }
+};
+
+function deepMerge(target, source) {
+  const out = Object.assign({}, target);
+  for (const k in source) {
+    if (source[k] && typeof source[k] === 'object' && !Array.isArray(source[k])) {
+      out[k] = deepMerge(target[k] || {}, source[k]);
+    } else {
+      out[k] = source[k];
+    }
+  }
+  return out;
+}
+
+function makeTrendDataset(rows, xKey, yKey, color, label) {
+  const xs = rows.map(r => r[xKey]);
+  const ys = rows.map(r => r[yKey]);
+  const { slope, intercept } = linearRegression(xs, ys);
+  return {
+    label: `${label} (trend)`,
+    data: [{ x: xs[0], y: intercept + slope*xs[0] }, { x: xs[xs.length-1], y: intercept + slope*xs[xs.length-1] }],
+    borderColor: color,
+    borderWidth: 1.5,
+    borderDash: [6, 3],
+    backgroundColor: 'transparent',
+    pointRadius: 0,
+    tension: 0
+  };
+}
+
+function renderCharts() {
+  if (!FILES.length) return;
+
+  const datasets = [];
+
+  FILES.forEach((f, fi) => {
+    const rows = getFilteredRows(f).filter(r => r.p1 > 10 || r.p2 > 10);
+    const label = FILES.length > 1 ? f.name.split('.')[0] : '';
+
+    if (ch1On) {
+      const validRows = rows.filter(r => r.p1 > 10);
+      datasets.push({
+        label: `T1${label ? ' '+label : ''}`,
+        data: validRows.map(r => ({ x: r.ts, y: r.p1 })),
+        borderColor: f.color.line,
+        backgroundColor: f.color.fill,
+        borderWidth: 1.5,
+        fill: false
+      });
+
+    }
+
+    if (ch2On) {
+      const validRows = rows.filter(r => r.p2 > 10);
+      datasets.push({
+        label: `T2${label ? ' '+label : ''}`,
+        data: validRows.map(r => ({ x: r.ts, y: r.p2 })),
+        borderColor: f.color.line + 'cc',
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        borderDash: [4, 2],
+        fill: false
+      });
+
+    }
+  });
+
+  // Set global t0 for tick labels
+  if (FILES.length) {
+    let minTs = Infinity;
+    FILES.forEach(f => { if (f.rows[0] && f.rows[0].ts < minTs) minTs = f.rows[0].ts; });
+    window._chartT0 = minTs;
+  }
+
+  // Reference line dataset
+  const refBar = parseFloat(document.getElementById('holdTargetBar').value);
+  if (!isNaN(refBar) && refBar > 0) {
+    // Get x range from all data
+    let xMin = Infinity, xMax = -Infinity;
+    FILES.forEach(f => getFilteredRows(f).forEach(r => {
+      if (r.ts < xMin) xMin = r.ts;
+      if (r.ts > xMax) xMax = r.ts;
+    }));
+    if (!isFinite(xMin) || !isFinite(xMax)) { /* skip ref line if no data */ }
+    else datasets.push({
+      label: 'Måltrykk ' + refBar + ' bar',
+      data: [{ x: xMin, y: refBar }, { x: xMax, y: refBar }],
+      borderColor: 'rgba(255,215,0,0.7)',
+      borderWidth: 2,
+      borderDash: [8, 4],
+      backgroundColor: 'transparent',
+      pointRadius: 0,
+      tension: 0,
+      order: 0
+    });
+  }
+
+  // Hold zone drawn via inline plugin (more reliable than dataset fill)
+
+  // Main chart
+  // Inline plugin draws hold zone as a canvas rectangle — reliable across all Chart.js versions
+  const holdZonePlugin = {
+    id: 'holdZone',
+    afterDraw(chart) {
+      if (!holdTsFrom || !holdTsTo) return;
+      const xScale = chart.scales.x;
+      const yScale = chart.scales.y;
+      if (!xScale || !yScale) return;
+      const x1 = xScale.getPixelForValue(holdTsFrom);
+      const x2 = xScale.getPixelForValue(holdTsTo);
+      const y1 = yScale.top;
+      const y2 = yScale.bottom;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,215,0,0.08)';
+      ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+      ctx.strokeStyle = 'rgba(255,215,0,0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 3]);
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1, y2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x2, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  };
+
+  if (mainChartInst) mainChartInst.destroy();
+  const mainCanvas = document.getElementById('mainChart');
+  mainChartInst = new Chart(mainCanvas, {
+    type: 'line',
+    data: { datasets },
+    options: deepMerge(chartDefaults, {
+      animation: false,
+      plugins: {
+        legend: { display: true },
+        zoom: {
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            mode: 'x',
+            onZoom: () => { document.getElementById('resetZoomBtn').style.display = 'inline-flex'; }
+          },
+          pan: {
+            enabled: false,
+            mode: 'x',
+            onPan: () => { document.getElementById('resetZoomBtn').style.display = 'inline-flex'; }
+          }
+        }
+      }
+    }),
+    plugins: [holdZonePlugin]
+  });
+  setupChartDrag(mainCanvas);
+
+  // Update badges
+  const total = FILES.reduce((s, f) => s + getFilteredRows(f).length, 0);
+  document.getElementById('dataPointsBadge').textContent = `${total} datapunkt`;
+}
+
+function resetZoom() {
+  if (mainChartInst) {
+    mainChartInst.resetZoom();
+    document.getElementById('resetZoomBtn').style.display = 'none';
+  }
+}
+
+
+// ============================================================
+//  RAW DATA TABLE
+// ============================================================
+function renderTable() {
+  const tbody = document.getElementById('rawTableBody');
+  const rows = [];
+  FILES.forEach(f => {
+    getFilteredRows(f).forEach(r => rows.push({ ...r, fname: f.name }));
+  });
+  rows.sort((a, b) => a.t_min - b.t_min);
+
+  // Render in chunks to avoid freezing browser on large datasets
+  const CHUNK = 2000;
+  const total = rows.length;
+  let rendered = 0;
+
+  function renderChunk() {
+    const chunk = rows.slice(rendered, rendered + CHUNK);
+    tbody.innerHTML += chunk.map((r, i) => `
+      <tr>
+        <td>${rendered + i + 1}</td>
+        <td style="color:var(--text-dim);font-size:11px">${fmtDate(r.dt)}</td>
+        <td style="color:var(--accent1);font-weight:bold">${fmtTime(r.dt)}</td>
+        <td>${r.t_min.toFixed(2)}</td>
+        <td>${r.p1 > 10 ? r.p1.toFixed(3) : '<span style="color:var(--text-dim)">—</span>'}</td>
+        <td>${r.p2 > 10 ? r.p2.toFixed(3) : '<span style="color:var(--text-dim)">—</span>'}</td>
+      </tr>
+    `).join('');
+    rendered += chunk.length;
+    document.getElementById('rowCountBadge').textContent = `${rendered} / ${total} rader`;
+    if (rendered < total) setTimeout(renderChunk, 0);
+    else document.getElementById('rowCountBadge').textContent = `${total} rader`;
+  }
+
+  tbody.innerHTML = '';
+  renderChunk();
+}
+
+// ============================================================
+//  PRESSURE DROP CALC
+// ============================================================
+function calcPressureDrop() {
+  const el = document.getElementById('dropSummaryContent');
+  let html = `<table class="data-table"><thead><tr>
+    <th>Fil</th><th>Kanal</th><th style="color:var(--accent1)">Starttid</th><th style="color:var(--accent1)">Sluttid</th><th>Start (bar)</th><th>Slutt (bar)</th>
+    <th>Trykkfall (bar)</th><th>Rate (bar/min)</th><th>Varighet (min)</th>
+  </tr></thead><tbody>`;
+
+  FILES.forEach(f => {
+    ['p1', 'p2'].forEach((ch, ci) => {
+      if (ci === 0 && !ch1On) return;
+      if (ci === 1 && !ch2On) return;
+
+      let rows;
+      if (holdTsFrom && holdTsTo) {
+        rows = getHoldRows(f, ch, holdTsFrom, holdTsTo);
+      } else {
+        rows = getFilteredRows(f).filter(r => r[ch] > 10);
+      }
+      if (rows.length < 2) return;
+
+      const start = rows[0][ch];
+      const end   = rows[rows.length-1][ch];
+      const drop  = start - end;
+      const dur   = rows[rows.length-1].t_min - rows[0].t_min;
+      const rate  = dur > 0 ? drop / dur : 0;
+
+      // Fargekoding kun innenfor holdperioden
+      const inHold = holdTsFrom && holdTsTo &&
+        rows[0].ts >= holdTsFrom && rows[rows.length-1].ts <= holdTsTo;
+
+      let cls = '';
+      if (inHold) {
+        if (drop <= 0) {
+          cls = 'drop-ok'; // oppbygging
+        } else {
+          // Bruk holdMaxPct (samme referanse som holdperiode-analysen)
+          const maxPctDrop = parseFloat(document.getElementById('holdMaxPct')?.value) || null;
+          const target = parseFloat(document.getElementById('holdTargetBar')?.value);
+          const pctRef = (!isNaN(target) && target > 0) ? target : start;
+          const dropPct = pctRef > 0 ? (drop / pctRef * 100) : null;
+          if (maxPctDrop && dropPct !== null) {
+            cls = dropPct > maxPctDrop ? 'drop-bad' : 'drop-ok';
+          } else {
+            cls = drop > 15 ? 'drop-warn' : 'drop-ok';
+          }
+        }
+      }
+
+      const dropCell = cls
+        ? `<span class="drop-highlight ${cls}">${drop.toFixed(3)}</span>`
+        : `${drop.toFixed(3)}`;
+
+      html += `<tr>
+        <td>${f.name.split('.')[0]}</td>
+        <td>T${ci+1}</td>
+        <td style="color:var(--accent1)">${fmtTime(rows[0].dt)}</td>
+        <td style="color:var(--accent1)">${fmtTime(rows[rows.length-1].dt)}</td>
+        <td>${start.toFixed(3)}</td>
+        <td>${end.toFixed(3)}</td>
+        <td>${dropCell}</td>
+        <td>${rate.toFixed(4)}</td>
+        <td>${dur.toFixed(1)}</td>
+      </tr>`;
+    });
+  });
+
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+// ============================================================
+//  EXPORT CSV
+// ============================================================
+function exportCSV() {
+  const kunde    = document.getElementById('rpt_kunde').value    || '';
+  const prosjekt = document.getElementById('rpt_prosjekt').value || '';
+  const sted     = document.getElementById('rpt_sted').value     || '';
+  const dato     = document.getElementById('rpt_dato').value     || (FILES.length ? fmtDate(FILES[0].rows[0].dt) : '');
+  const serial   = document.getElementById('rpt_serial').value   || '';
+  const operator = document.getElementById('rpt_operator').value || '';
+  const rov      = rovSystem || document.getElementById('rpt_rov_custom').value || '';
+  const target   = parseFloat(document.getElementById('holdTargetBar').value);
+  const maxPct   = parseFloat(document.getElementById('holdMaxPct').value);
+  const holdCh   = document.getElementById('holdChannel').value;
+  const chLabel  = holdCh === 'p1' ? 'T1' : 'T2';
+
+  let csv = '';
+
+  // ── Prosjektinfo ──
+  csv += 'IHPU TRYKKTESTRAPPORT\n';
+  csv += 'Kunde,' + kunde + '\n';
+  csv += 'Prosjektnummer,' + prosjekt + '\n';
+  csv += 'Sted,' + sted + '\n';
+  csv += 'Testdato,' + dato + '\n';
+  csv += 'IHPU Serienummer,' + serial + '\n';
+  csv += 'Operatør,' + operator + '\n';
+  csv += 'ROV System,' + rov + '\n';
+  if (!isNaN(target) && target > 0) csv += 'Måltrykk (bar),' + target.toFixed(0) + '\n';
+  if (!isNaN(maxPct) && maxPct > 0) csv += 'Maks % drop,' + maxPct.toFixed(1) + '\n';
+  csv += 'Kanal,' + chLabel + '\n';
+  csv += '\n';
+
+  // ── Holdperiode-analyse ──
+  if (holdTsFrom && holdTsTo && FILES.length) {
+    const useFrom = holdTsFrom || Math.min(...FILES.map(f => f.rows[0]?.ts || Infinity));
+    const useTo   = holdTsTo   || Math.max(...FILES.map(f => f.rows[f.rows.length-1]?.ts || -Infinity));
+
+    FILES.forEach(f => {
+      const holdRows = getHoldRows(f, holdCh, useFrom, useTo);
+      if (holdRows.length < 2) return;
+
+      const pStart  = holdRows[0][holdCh];
+      const pEnd    = holdRows[holdRows.length-1][holdCh];
+      const drop    = pStart - pEnd;
+      const durMin  = (holdRows[holdRows.length-1].ts - holdRows[0].ts) / 60000;
+      const rate    = durMin > 0 ? drop / durMin : 0;
+      const pctRef  = (!isNaN(target) && target > 0) ? target : pStart;
+      const dropPct = pctRef > 0 ? (drop / pctRef * 100) : null;
+      const pctOk   = (!isNaN(maxPct) && maxPct > 0 && dropPct !== null) ? dropPct <= maxPct : null;
+      const fname   = FILES.length > 1 ? ' (' + f.name.split('.')[0] + ')' : '';
+
+      csv += 'HOLDPERIODE' + fname + '\n';
+      csv += 'Periode fra,' + tsToTime(useFrom) + '\n';
+      csv += 'Periode til,' + tsToTime(useTo) + '\n';
+      csv += 'Varighet (min),' + durMin.toFixed(2) + '\n';
+      csv += 'Starttrykk (bar),' + pStart.toFixed(3) + '\n';
+      csv += 'Slutttrykk (bar),' + pEnd.toFixed(3) + '\n';
+      csv += 'Trykkfall (bar),' + drop.toFixed(3) + '\n';
+      if (dropPct !== null) csv += 'Trykkfall (%),' + dropPct.toFixed(3) + '\n';
+      csv += 'Rate (bar/min),' + rate.toFixed(4) + '\n';
+      csv += 'Rate (bar/t),' + (rate*60).toFixed(3) + '\n';
+      if (!isNaN(target) && target > 0) csv += 'Avvik fra måltrykk (bar),' + (pStart - target).toFixed(2) + '\n';
+      if (pctOk !== null) csv += 'Resultat,' + (pctOk ? 'GODKJENT' : 'IKKE GODKJENT') + '\n';
+      csv += 'Datapunkt,' + holdRows.length + '\n';
+      csv += '\n';
+    });
+  }
+
+  // ── Rådata ──
+  csv += 'RÅDATA\n';
+  csv += 'Fil,Nr,Tidspunkt,Tid_min,T1_bar,T2_bar\n';
+  const allRows = [];
+  FILES.forEach(f => {
+    getFilteredRows(f).forEach(r => allRows.push([
+      f.name, r.idx, r.dtStr, r.t_min.toFixed(3), r.p1.toFixed(3), r.p2.toFixed(3)
+    ]));
+  });
+  allRows.sort((a, b) => parseFloat(a[3]) - parseFloat(b[3]));
+  allRows.forEach(r => { csv += r.join(',') + '\n'; });
+
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const kunde2 = kunde.replace(/\s+/g,'_') || 'eksport';
+  const dato2  = dato.replace(/\./g,'-')   || 'dato';
+  a.download = 'IHPU_' + kunde2 + '_' + dato2 + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+
+// ============================================================
+//  RAPPORT MODAL
+// ============================================================
+let passFail = null;
+
+function openRapportModal() {
+  if (!FILES.length) return;
+  const d = FILES[0].rows[0].dt;
+  document.getElementById('rpt_dato').value = fmtDate(d);
+
+  // Build criteria summary from hold panel values
+  const target  = parseFloat(document.getElementById('holdTargetBar').value);
+  const maxPct  = parseFloat(document.getElementById('holdMaxPct').value);
+  const holdCh  = document.getElementById('holdChannel').value;
+  const chLabel = holdCh === 'p1' ? 'T1' : 'T2';
+  const el = document.getElementById('rpt_criteria_summary');
+
+  let lines = [];
+  if (!isNaN(target) && target > 0)
+    lines.push('<span style="color:#5a7a9a">Måltrykk:</span> <span style="color:#eaf4ff;font-weight:bold">' + target.toFixed(0) + ' bar</span>');
+  if (!isNaN(maxPct) && maxPct > 0)
+    lines.push('<span style="color:#5a7a9a">Maks % drop:</span> <span style="color:#eaf4ff;font-weight:bold">' + maxPct.toFixed(1) + '%</span>');
+  lines.push('<span style="color:#5a7a9a">Kanal:</span> <span style="color:#eaf4ff;font-weight:bold">' + chLabel + '</span>');
+
+  // Compute result
+  let resultLine = '';
+  if (holdTsFrom && holdTsTo) {
+    const f = FILES[0];
+    const rows = f.rows.filter(r => r.ts >= holdTsFrom && r.ts <= holdTsTo && r[holdCh] > 10);
+    if (rows.length >= 2) {
+      const pStart = rows[0][holdCh];
+      const pEnd   = rows[rows.length-1][holdCh];
+      const drop   = pStart - pEnd;
+      const durMin = (rows[rows.length-1].ts - rows[0].ts) / 60000;
+      const pctRef = (!isNaN(target) && target > 0) ? target : pStart;
+      const dropPct = pctRef > 0 ? (drop / pctRef * 100) : null;
+
+      lines.push('<span style="color:#5a7a9a">Trykkfall:</span> <span style="color:#eaf4ff;font-weight:bold">' + drop.toFixed(3) + ' bar' + (dropPct !== null ? ' (' + dropPct.toFixed(3) + '%)' : '') + '</span>');
+      lines.push('<span style="color:#5a7a9a">Periode:</span> <span style="color:#eaf4ff">' + tsToTime(holdTsFrom) + ' → ' + tsToTime(holdTsTo) + ' (' + durMin.toFixed(1) + ' min)</span>');
+
+      // Auto set pass/fail
+      if (!isNaN(maxPct) && maxPct > 0 && dropPct !== null) {
+        const ok = dropPct <= maxPct;
+        selectPassFail(ok);
+        resultLine = '<div style="margin-top:8px;padding:8px 12px;border-radius:6px;border:1px solid;' +
+          (ok ? 'border-color:#39d353;background:rgba(57,211,83,0.1);color:#39d353' : 'border-color:#ff3b5c;background:rgba(255,59,92,0.1);color:#ff3b5c') +
+          ';font-weight:bold;font-size:13px">' + (ok ? '✓  GODKJENT' : '✗  IKKE GODKJENT') + '</div>';
+      }
+    }
+  } else {
+    lines.push('<span style="color:#ff6b35">⚠ Ingen holdperiode valgt</span>');
+  }
+
+  el.innerHTML = lines.join('<br>') + resultLine;
+  document.getElementById('rapportModal').classList.add('open');
+}
+
+function closeRapportModal() {
+  document.getElementById('rapportModal').classList.remove('open');
+}
+
+function selectPassFail(pass) {
+  passFail = pass;
+  const btnPass = document.getElementById('btnPass');
+  const btnFail = document.getElementById('btnFail');
+  if (btnPass) btnPass.classList.toggle('selected', pass === true);
+  if (btnFail) btnFail.classList.toggle('selected', pass === false);
+}
+
+let rovSystem = '';
+function selectROV(val) {
+  rovSystem = val;
+  document.getElementById('rovC24').classList.toggle('selected', val === 'C24');
+  document.getElementById('rovC25').classList.toggle('selected', val === 'C25');
+  document.getElementById('rpt_rov_custom').value = '';
+}
+
+// ============================================================
+//  PDF GENERATOR  — hvit, profesjonell layout
+// ============================================================
+
+// Render a clean hold-period-only chart for PDF — decimated to max ~40 points, white bg
+function renderHoldChartToCanvas() {
+  return new Promise(resolve => {
+    try {
+      // Capture the live mainChart canvas — it already looks perfect
+      const src = document.getElementById('mainChart');
+      if (!src) { resolve(null); return; }
+
+      // Give chart a moment to finish painting, then copy to white-bg canvas
+      setTimeout(() => {
+        try {
+          const out = document.createElement('canvas');
+          // Use 2x resolution for crisp PDF output
+          out.width  = src.width  * 2;
+          out.height = src.height * 2;
+          const ctx = out.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, out.width, out.height);
+          // Draw dark chart onto white bg — colours will show fine in PDF
+          ctx.drawImage(src, 0, 0, out.width, out.height);
+          resolve(out.toDataURL('image/png', 1.0));
+        } catch(e) { resolve(null); }
+      }, 100);
+    } catch(e) { resolve(null); }
+  });
+}
+
+// Render main chart to offscreen white canvas
+function renderMainChartToCanvas() {
+  return new Promise(resolve => {
+    if (!FILES.length) { resolve(null); return; }
+    const offW = 900, offH = 320;
+    const cv = document.createElement('canvas');
+    cv.width = offW; cv.height = offH;
+
+    const datasets = [];
+    FILES.forEach(f => {
+      const rows = getFilteredRows(f).filter(r => r.p1 > 10 || r.p2 > 10);
+      const rgb = hexToRgb(f.color.line);
+      const clr = 'rgb('+rgb.join(',')+')';
+      if (ch1On) {
+        const vr = rows.filter(r=>r.p1>10);
+        datasets.push({ label:'T1'+(FILES.length>1?' '+f.name.split('.')[0]:''),
+          data: vr.map(r=>({x:r.ts,y:r.p1})),
+          borderColor:clr, backgroundColor:'transparent', borderWidth:2, pointRadius:0, tension:0.1 });
+      }
+      if (ch2On) {
+        const vr = rows.filter(r=>r.p2>10);
+        datasets.push({ label:'T2'+(FILES.length>1?' '+f.name.split('.')[0]:''),
+          data: vr.map(r=>({x:r.ts,y:r.p2})),
+          borderColor:clr, borderDash:[4,2], backgroundColor:'transparent', borderWidth:2, pointRadius:0, tension:0.1 });
+      }
+    });
+
+    // hold zone
+    if (holdTsFrom && holdTsTo) {
+      let yMax = -Infinity;
+      FILES.forEach(f => getFilteredRows(f).forEach(r => {
+        if (ch1On && r.p1>10) yMax=Math.max(yMax,r.p1);
+        if (ch2On && r.p2>10) yMax=Math.max(yMax,r.p2);
+      }));
+      datasets.push({ label:'Holdperiode', data:[{x:holdTsFrom,y:yMax*1.02},{x:holdTsTo,y:yMax*1.02}],
+        borderColor:'rgba(200,160,0,0.5)', backgroundColor:'rgba(255,220,0,0.08)',
+        fill:{target:{value:0},above:'rgba(255,220,0,0.08)'}, pointRadius:0, borderWidth:1 });
+    }
+
+    const target = parseFloat(document.getElementById('holdTargetBar').value);
+    if (!isNaN(target) && target > 0) {
+      let xMin=Infinity, xMax=-Infinity;
+      FILES.forEach(f=>getFilteredRows(f).forEach(r=>{xMin=Math.min(xMin,r.ts);xMax=Math.max(xMax,r.ts);}));
+      datasets.push({ label:'Måltrykk '+target+' bar',
+        data:[{x:xMin,y:target},{x:xMax,y:target}],
+        borderColor:'rgba(180,140,0,0.7)', borderDash:[8,4], pointRadius:0, borderWidth:1.5, backgroundColor:'transparent' });
+    }
+
+    if (window._chartT0) {
+      // set for tick callback
+    }
+    const tmpChart = new Chart(cv, {
+      type:'line', data:{datasets},
+      options:{
+        responsive:false, animation:false,
+        plugins:{ legend:{ labels:{ color:'#333', font:{size:11} } } },
+        scales:{
+          x:{ type:'time', time:{unit:'minute',displayFormats:{minute:'HH:mm',second:'HH:mm:ss'}},
+            ticks:{color:'#555',font:{size:10},maxTicksLimit:12,maxRotation:0,
+              callback:function(val){
+                const d=new Date(val);
+                const hh=String(d.getHours()).padStart(2,'0');
+                const mm=String(d.getMinutes()).padStart(2,'0');
+                let minStr='';
+                if(window._chartT0){ const el=(val-window._chartT0)/60000; minStr=' (+'+el.toFixed(0)+'m)'; }
+                return hh+':'+mm+minStr;
+              }
+            },
+            grid:{color:'rgba(0,0,0,0.08)'},
+            title:{display:true,text:'Klokkeslett',color:'#666',font:{size:10}}
+          },
+          y:{ ticks:{color:'#555',font:{size:10}}, grid:{color:'rgba(0,0,0,0.08)'},
+            title:{display:true,text:'Trykk (bar)',color:'#666',font:{size:10}} }
+        }
+      }
+    });
+    const ctx = cv.getContext('2d');
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,offW,offH);
+    ctx.globalCompositeOperation = 'source-over';
+    setTimeout(() => { const img=cv.toDataURL('image/png',0.95); tmpChart.destroy(); resolve(img); }, 120);
+  });
+}
+
+async function generatePDF() {
+  const { jsPDF } = window.jspdf;
+
+  const meta = {
+    kunde:     document.getElementById('rpt_kunde').value     || '—',
+    prosjekt:  document.getElementById('rpt_prosjekt').value  || '—',
+    sted:      document.getElementById('rpt_sted').value      || '—',
+    dato:      document.getElementById('rpt_dato').value      || fmtDate(FILES[0].rows[0].dt),
+    serial:    document.getElementById('rpt_serial').value    || '—',
+    operator:  document.getElementById('rpt_operator').value  || '—',
+    kommentar: document.getElementById('rpt_kommentar').value || '',
+    maxfall:   null,
+    maxrate:   null,
+    target:    parseFloat(document.getElementById('holdTargetBar').value) || null,
+    maxPct:    parseFloat(document.getElementById('holdMaxPct').value) || null,
+    holdCh:    document.getElementById('holdChannel').value,
+    rov:       rovSystem || document.getElementById('rpt_rov_custom').value || '—',
+  };
+
+  // Pre-compute hold period results for PDF (uses getHoldRows for sparse data support)
+  let holdCalc = null;
+  if (FILES.length) {
+    const f = FILES[0];
+    const useFrom = holdTsFrom || Math.min(...FILES.map(f => f.rows[0]?.ts || Infinity));
+    const useTo   = holdTsTo   || Math.max(...FILES.map(f => f.rows[f.rows.length-1]?.ts || -Infinity));
+    const holdRows = getHoldRows(f, meta.holdCh, useFrom, useTo);
+    if (holdRows.length >= 2) {
+      const pStart  = holdRows[0][meta.holdCh];
+      const pEnd    = holdRows[holdRows.length-1][meta.holdCh];
+      const drop    = pStart - pEnd;
+      const durMin  = (holdRows[holdRows.length-1].ts - holdRows[0].ts) / 60000;
+      const rate    = durMin > 0 ? drop / durMin : 0;
+      const pctRef  = (meta.target && meta.target > 0) ? meta.target : pStart;
+      const dropPct = pctRef > 0 ? (drop / pctRef * 100) : null;
+      const pctOk   = (meta.maxPct && dropPct !== null) ? dropPct <= meta.maxPct : null;
+      const rateOk  = meta.maxrate ? Math.abs(rate) <= meta.maxrate : null;
+      holdCalc = { pStart, pEnd, drop, durMin, rate, rateH: rate*60, dropPct, pctOk, rateOk, rows: holdRows };
+    }
+  }
+
+  // Auto-determine pass/fail from holdCalc if not manually set
+  const autoPassFail = holdCalc && holdCalc.pctOk !== null ? holdCalc.pctOk : passFail;
+
+  // Pre-render charts to white canvases before building PDF
+  let holdImgData = null;
+  try { holdImgData = await renderHoldChartToCanvas(); } catch(e) { holdImgData = null; }
+
+  const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+  const W=210, H=297, ML=16, MR=16, MT=20;
+  const CW = W-ML-MR;
+  let y = MT;
+  let pageNum = 1;
+
+  // ── colours: light/professional ──────────────────────────────
+  const C = {
+    white:   [255,255,255],
+    offwhite:[248,249,251],
+    light:   [240,243,248],
+    mid:     [200,210,225],
+    border:  [180,195,215],
+    dim:     [120,140,165],
+    body:    [50,60,75],
+    heading: [25,35,55],
+    navy:    [20,40,80],
+    accent:  [0,100,200],
+    green:   [20,150,80],
+    red:     [200,40,50],
+    amber:   [180,130,0],
+    lineB:   [220,228,240],
+  };
+
+  // ── helpers ───────────────────────────────────────────────────
+  function sf(size, style='normal', col=C.body) {
+    doc.setFont('helvetica', style);
+    doc.setFontSize(size);
+    doc.setTextColor(...col);
+  }
+
+  function hl(yy, col=C.lineB, lw=0.25) {
+    doc.setDrawColor(...col); doc.setLineWidth(lw);
+    doc.line(ML, yy, W-MR, yy);
+  }
+
+  function fillRect(x,yy,w,h,fill,strokeCol=null,lw=0.3,r=0) {
+    doc.setFillColor(...fill);
+    if(strokeCol){ doc.setDrawColor(...strokeCol); doc.setLineWidth(lw); }
+    if(r>0) {
+      if(strokeCol) doc.roundedRect(x,yy,w,h,r,r,'FD');
+      else          doc.roundedRect(x,yy,w,h,r,r,'F');
+    } else {
+      if(strokeCol) doc.rect(x,yy,w,h,'FD');
+      else          doc.rect(x,yy,w,h,'F');
+    }
+  }
+
+  function strokeRect(x,yy,w,h,strokeCol,lw=0.3,r=0) {
+    doc.setDrawColor(...strokeCol); doc.setLineWidth(lw);
+    if(r>0) doc.roundedRect(x,yy,w,h,r,r,'D');
+    else    doc.rect(x,yy,w,h,'D');
+  }
+
+  function pageHeader(title, sub) {
+    // white bg entire page
+    fillRect(0, 0, W, H, C.white);
+    // Navy top bar
+    fillRect(0, 0, W, 18, C.navy);
+    sf(11,'bold',C.white);
+    doc.text('IHPU Trykktestrapport', ML, 12);
+    sf(7,'normal',C.mid);
+    doc.text(title, W/2, 12, {align:'center'});
+    doc.text(meta.kunde+' | '+meta.dato, W-MR, 12, {align:'right'});
+    // thin accent line under header
+    fillRect(0,18,W,1,[0,120,220]);
+    y = 26;
+  }
+
+  function pageFooter(n, total) {
+    hl(H-14, C.lineB);
+    sf(7,'normal',C.dim);
+    doc.text('IHPU Trykktestrapport  –  Konfidensielt', ML, H-9);
+    doc.text('Side '+n+' av '+total, W/2, H-9, {align:'center'});
+    doc.text(meta.prosjekt+' | '+meta.serial, W-MR, H-9, {align:'right'});
+  }
+
+  function sectionTitle(txt, yy) {
+    sf(7,'bold',C.accent);
+    doc.text(txt.toUpperCase(), ML, yy);
+    doc.setDrawColor(...C.accent); doc.setLineWidth(0.4);
+    doc.line(ML, yy+1.5, W-MR, yy+1.5);
+    return yy + 6;
+  }
+
+  // Key-value row (inline)
+  function kvRow(pairs, yy, rowH=7) {
+    const colW = CW / pairs.length;
+    pairs.forEach(([lbl,val,col=C.body], i) => {
+      const x = ML + i*colW;
+      sf(6.5,'normal',C.dim);
+      doc.text(lbl.toUpperCase(), x, yy);
+      sf(9,'bold', col||C.body);
+      doc.text(String(val).substring(0,30), x, yy+rowH-0.5);
+    });
+    return yy + rowH + 3;
+  }
+
+  // Simple table
+  function drawTable(headers, rows2, yy) {
+    const colW = CW / headers.length;
+    const rowH = 6.5;
+    // header
+    fillRect(ML, yy, CW, rowH+1, C.light);
+    sf(7,'bold',C.heading);
+    headers.forEach((h,i) => doc.text(h, ML+i*colW+2, yy+5));
+    yy += rowH+1;
+    rows2.forEach((row, ri) => {
+      if(ri%2===0) fillRect(ML,yy,CW,rowH,C.offwhite);
+      sf(7,'normal',C.body);
+      row.forEach((cell,i) => doc.text(String(cell).substring(0,22), ML+i*colW+2, yy+4.5));
+      yy += rowH;
+    });
+    hl(yy, C.lineB);
+    return yy + 4;
+  }
+
+  // Count total pages
+  // Count total pages: page1=info, page2=hold chart+stats, page3=detailed data table (if hold set)
+  const totalPages = (holdTsFrom && holdTsTo) ? 3 : 1;
+
+  // ═══════════════════════════════════════════════════════════
+  // PAGE 1 — Prosjektinfo
+  // ═══════════════════════════════════════════════════════════
+  pageHeader('Prosjektinformasjon', 'Side 1');
+
+  // ── Project info block ──
+  y = sectionTitle('Prosjektinformasjon', y);
+
+  const hw = (CW-6)/2;
+  // Row 1
+  kvRow([
+    ['Kunde', meta.kunde],
+    ['Prosjektnummer', meta.prosjekt]
+  ], y);
+  y += 13;
+  kvRow([
+    ['Sted / Lokasjon', meta.sted],
+    ['Testdato', meta.dato]
+  ], y);
+  y += 13;
+  kvRow([
+    ['IHPU Serienummer', meta.serial],
+    ['Operatør', meta.operator]
+  ], y);
+  y += 13;
+  kvRow([
+    ['ROV System', meta.rov],
+    ['', '']
+  ], y);
+  y += 13;
+
+  if (meta.kommentar) {
+    sf(6.5,'normal',C.dim); doc.text('MERKNAD', ML, y);
+    y += 4;
+    sf(8,'normal',C.body);
+    const cmLines = doc.splitTextToSize(meta.kommentar, CW);
+    doc.text(cmLines, ML, y);
+    y += cmLines.length * 4 + 4;
+  }
+
+  hl(y, C.lineB); y += 6;
+
+  pageFooter(1, totalPages);
+
+  // ═══════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════
+  // PAGE 2 — Holdperiode
+  // ═══════════════════════════════════════════════════════════
+  if (holdTsFrom && holdTsTo) {
+    doc.addPage(); pageNum++;
+    pageHeader('Holdperiode', 'Side 2');
+
+    // Info strip
+    fillRect(ML, y, CW, 9, C.light, C.lineB, 0.3, 1);
+    sf(8,'normal',C.body);
+    const holdDurMin = ((holdTsTo-holdTsFrom)/60000).toFixed(1);
+    doc.text(
+      'Periode: '+tsToTime(holdTsFrom)+' → '+tsToTime(holdTsTo)
+      +'   |   Varighet: '+holdDurMin+' min'
+      +(meta.target ? '   |   Måltrykk: '+meta.target.toFixed(0)+' bar' : ''),
+      W/2, y+6, {align:'center'}
+    );
+    y += 13;
+
+    // Hold period chart
+    if (holdImgData) {
+      y = sectionTitle('Trykk i holdperioden', y);
+      const imgH = Math.round(CW * (320/900));
+      fillRect(ML-1, y-1, CW+2, imgH+2, C.offwhite, C.lineB, 0.3);
+      doc.addImage(holdImgData, 'PNG', ML, y, CW, imgH);
+      y += imgH + 8;
+    }
+
+    // Hold stats table — uses pre-computed holdCalc
+    if (holdCalc) {
+      const { pStart, pEnd, drop, durMin, rate, rateH, dropPct, pctOk, rateOk, rows: holdRows } = holdCalc;
+      const chLabel = meta.holdCh === 'p1' ? 'T1' : 'T2';
+      const dropPctStr = dropPct !== null ? ' ('+dropPct.toFixed(3)+'%)' : '';
+      const pctRef = (meta.target && meta.target > 0) ? meta.target : pStart;
+
+      y = sectionTitle('Måleresultater — ' + chLabel, y);
+
+      // Row 1: start, slutt, fall, varighet
+      const dropColPdf = pctOk === false ? C.red : pctOk === true ? C.green : C.heading;
+      kvRow([
+        ['Starttrykk',  pStart.toFixed(3)+' bar',        C.heading],
+        ['Slutttrykk',  pEnd.toFixed(3)+' bar',          C.heading],
+        ['Trykkfall',   drop.toFixed(3)+' bar'+dropPctStr, dropColPdf],
+        ['Varighet',    durMin.toFixed(1)+' min',         C.body]
+      ], y);
+      y += 14;
+
+      // Row 2: rate, datapunkt, referanse, avvik
+      const row2 = [
+        ['Rate', rate.toFixed(4)+' bar/min ('+rateH.toFixed(3)+' bar/t)', C.body],
+        ['Datapunkt', String(holdRows.length), C.body],
+      ];
+      if (meta.target) {
+        const avvik = pStart - meta.target;
+        row2.push(['Avvik fra måltrykk', (avvik>=0?'+':'')+avvik.toFixed(2)+' bar', Math.abs(avvik)<2?C.green:C.amber]);
+      }
+      if (dropPct !== null) {
+        row2.push(['% drop (ref: '+pctRef.toFixed(0)+' bar)', dropPct.toFixed(3)+'%', dropColPdf]);
+      }
+      kvRow(row2.slice(0,4), y);
+      y += 14;
+
+      // Kriteriesjekk
+      const checks = [];
+      if (meta.maxPct && dropPct !== null) checks.push([pctOk, '% drop: '+dropPct.toFixed(3)+'% (krav ≤ '+meta.maxPct.toFixed(1)+'%)']);
+
+      if (checks.length > 0) {
+        y = sectionTitle('Kriteriesjekk', y);
+        const cw2 = (CW - (checks.length-1)*4) / checks.length;
+        checks.forEach(([ok, txt], i) => {
+          const x2 = ML + i*(cw2+4);
+          const bg  = ok ? [235,252,242] : [255,238,238];
+          const col = ok ? C.green : C.red;
+          fillRect(x2, y, cw2, 10, bg, col, 0.5, 1);
+          sf(8,'bold',col);
+          const maxW = cw2 - 6;
+          const label = (ok?'✓  ':'✗  ')+txt;
+          const truncated = doc.splitTextToSize(label, maxW)[0];
+          doc.text(truncated, x2+3, y+6.5);
+        });
+        y += 14;
+      }
+
+      // Overall result banner
+      if (autoPassFail !== null) {
+        const ok = autoPassFail;
+        const pfCol = ok ? C.green : C.red;
+        const pfBg  = ok ? [235,252,242] : [255,238,238];
+        fillRect(ML, y, CW, 14, pfBg, pfCol, 0.8, 2);
+        sf(13,'bold',pfCol);
+        doc.text(ok ? '✓  GODKJENT' : '✗  IKKE GODKJENT', W/2, y+9.5, {align:'center'});
+        y += 18;
+      }
+    }
+
+    pageFooter(2, totalPages);
+
+    // ═══════════════════════════════════════════════════════════
+    // PAGE 3 — Detaljert trykktabell for holdperioden
+    // ═══════════════════════════════════════════════════════════
+    if (holdCalc && holdCalc.rows.length > 0) {
+      doc.addPage(); pageNum++;
+      pageHeader('Rådata — Holdperiode', 'Side 3');
+
+      y = sectionTitle('Detaljerte målinger i holdperioden', y);
+
+      const chLabel = meta.holdCh === 'p1' ? 'T1' : 'T2';
+      const holdRows = holdCalc.rows;
+      const t0ts = holdRows[0].ts;
+      const p0   = holdRows[0][meta.holdCh];
+
+      // Column widths: #, Klokkeslett, Min fra start, Trykk (bar), Endring fra start (bar), Endring fra forrige (bar)
+      const cols = [12, 32, 26, 30, 38, 40];
+      const headers = ['#', 'Klokkeslett', 'Min', chLabel + ' (bar)', 'Δ fra start (bar)', 'Δ fra forrige (bar)'];
+      const rowH = 6;
+      const tableTop = y;
+
+      // Draw header
+      fillRect(ML, y, CW, rowH + 1.5, C.light, C.lineB, 0.3);
+      sf(6.5, 'bold', C.heading);
+      let cx = ML + 2;
+      headers.forEach((h, i) => {
+        doc.text(h, cx, y + 5);
+        cx += cols[i];
+      });
+      y += rowH + 1.5;
+
+      let prevP = p0;
+      holdRows.forEach((r, idx) => {
+        const p      = r[meta.holdCh];
+        const minVal = ((r.ts - t0ts) / 60000).toFixed(2);
+        const dStart = (p - p0).toFixed(3);
+        const dPrev  = (p - prevP).toFixed(3);
+        prevP = p;
+
+        // Stripe alternate rows
+        if (idx % 2 === 0) fillRect(ML, y, CW, rowH, C.offwhite);
+
+        // Color pressure drop values
+        const dropVal = parseFloat(dStart);
+        const dropCol = dropVal < -0.5 ? C.red : dropVal < 0 ? C.amber : C.body;
+
+        sf(6.5, 'normal', C.body);
+        cx = ML + 2;
+        const cells = [
+          String(idx + 1),
+          tsToTime(r.ts),
+          minVal,
+          p.toFixed(3),
+          dStart,
+          dPrev
+        ];
+        cells.forEach((cell, i) => {
+          if (i === 4 || i === 5) {
+            sf(6.5, 'normal', dropCol);
+          } else {
+            sf(6.5, 'normal', C.body);
+          }
+          doc.text(cell, cx, y + 4.5);
+          cx += cols[i];
+        });
+
+        y += rowH;
+
+        // New page if running out of space
+        if (y > H - 22 && idx < holdRows.length - 1) {
+          pageFooter(pageNum, totalPages);
+          doc.addPage(); pageNum++;
+          pageHeader('Rådata — Holdperiode (forts.)', 'Side ' + pageNum);
+          y = sectionTitle('Detaljerte målinger (forts.)', y);
+
+          // Repeat header
+          fillRect(ML, y, CW, rowH + 1.5, C.light, C.lineB, 0.3);
+          sf(6.5, 'bold', C.heading);
+          cx = ML + 2;
+          headers.forEach((h, i) => { doc.text(h, cx, y + 5); cx += cols[i]; });
+          y += rowH + 1.5;
+        }
+      });
+
+      // Bottom border of table
+      hl(y, C.lineB);
+      y += 6;
+
+      // Summary line
+      sf(7, 'normal', C.dim);
+      doc.text(holdRows.length + ' målinger  |  Periode: ' + tsToTime(holdRows[0].ts) + ' → ' + tsToTime(holdRows[holdRows.length-1].ts), ML, y);
+      y += 8;
+
+      pageFooter(pageNum, totalPages);
+    }
+  }
+
+  // Save
+  const fname = 'IHPU_Rapport_'+meta.kunde.replace(/\s+/g,'_')+'_'+meta.dato.replace(/\./g,'-')+'.pdf';
+  doc.save(fname);
+  closeRapportModal();
+}
+
+function hexToRgb(hex) {
+  const r=parseInt(hex.slice(1,3),16);
+  const g=parseInt(hex.slice(3,5),16);
+  const b=parseInt(hex.slice(5,7),16);
+  return [r,g,b];
+}
+
+function pdfFooter(doc, page, W, H, ML, MR) {
+  // kept for backward compat, not used
+}
+
+// ============================================================
+//  MANUAL DATA ENTRY
+// ============================================================
+let _manualRows = [];   // [{id, hh, mm, ss, p1, p2}]
+let _manualId   = 0;
+
+function toggleManualPanel() {
+  const panel = document.getElementById('manualPanel');
+  const icon  = document.getElementById('manualToggleIcon');
+  panel.classList.toggle('collapsed');
+  icon.textContent = panel.classList.contains('collapsed') ? '▼ Åpne' : '▲ Lukk';
+  if (!panel.classList.contains('collapsed')) {
+    if (!document.getElementById('manualDate').value) {
+      const now = new Date();
+      document.getElementById('manualDate').value =
+        String(now.getDate()).padStart(2,'0') + '.' +
+        String(now.getMonth()+1).padStart(2,'0') + '.' +
+        now.getFullYear();
+    }
+    if (_manualRows.length === 0) addManualRow();
+  }
+}
+
+function addManualRow(tid='',p1='',p2='') {
+  const id = ++_manualId;
+  _manualRows.push({id, tid, p1, p2});
+  _renderManualRows();
+  // Focus the first time field of the new row
+  setTimeout(() => {
+    const el = document.getElementById('mtid_'+id);
+    if (el) el.focus();
+  }, 30);
+}
+
+function _removeManualRow(id) {
+  _manualRows = _manualRows.filter(r => r.id !== id);
+  _renderManualRows();
+}
+
+function _updateManual(id, field, val) {
+  const r = _manualRows.find(r => r.id === id);
+  if (r) r[field] = val;
+}
+
+// On input: only strip invalid chars — don't reformat (backspace would break)
+function _autoFormatTime(el) {
+  el.value = el.value.replace(/[^0-9:]/g, '').slice(0, 8);
+}
+
+// On blur: normalize digits to HH:MM:SS so parsing always works
+function _normalizeTime(el, id) {
+  const digits = el.value.replace(/[^0-9]/g, '');
+  if (!digits) return;
+  const d = digits.slice(0, 6).padEnd(6, '0');
+  el.value = d.slice(0,2) + ':' + d.slice(2,4) + ':' + d.slice(4,6);
+  _updateManual(id, 'tid', el.value);
+}
+
+function _renderManualRows() {
+  // Snapshot current DOM values BEFORE rebuilding.
+  // IMPORTANT: use type="text" for pressure fields so .value always returns
+  // the raw text — type="number" returns "" for mid-decimal input like "740."
+  // which caused data loss on every re-render.
+  _manualRows.forEach(r => {
+    const tidEl = document.getElementById('mtid_' + r.id);
+    const p1El  = document.getElementById('mp1_'  + r.id);
+    const p2El  = document.getElementById('mp2_'  + r.id);
+    if (tidEl) r.tid = tidEl.value;
+    if (p1El)  r.p1  = p1El.value;
+    if (p2El)  r.p2  = p2El.value;
+  });
+
+  const container = document.getElementById('manualRows');
+  container.innerHTML = _manualRows.map((r, idx) => `
+    <div style="display:grid;grid-template-columns:36px 1.2fr 1fr 1fr 40px;gap:6px;align-items:center">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);text-align:right;padding-right:4px">${idx+1}</div>
+
+      <!-- Klokkeslett: fritekst 24t HH:MM:SS -->
+      <input id="mtid_${r.id}" type="text" inputmode="numeric" placeholder="08:30:00" maxlength="8"
+        value="${r.tid}" class="manual-input"
+        style="padding:7px 8px;font-size:14px;font-family:var(--mono);letter-spacing:1px"
+        oninput="_updateManual(${r.id},'tid',this.value);_autoFormatTime(this)"
+        onblur="_normalizeTime(this,${r.id})"
+        onkeydown="if(event.key==='Enter'){_normalizeTime(this,${r.id});document.getElementById('mp1_${r.id}').focus();}">
+
+      <!-- T1: type=text+inputmode=decimal so .value always has raw text -->
+      <input id="mp1_${r.id}" type="text" inputmode="decimal" placeholder="740.000"
+        value="${r.p1}" class="manual-input" style="text-align:right;padding:7px 8px;font-size:13px"
+        oninput="_updateManual(${r.id},'p1',this.value)"
+        onkeydown="if(event.key==='Enter'){_updateManual(${r.id},'p1',this.value);addManualRow();}">
+
+      <!-- T2: same approach -->
+      <input id="mp2_${r.id}" type="text" inputmode="decimal" placeholder="—"
+        value="${r.p2}" class="manual-input" style="text-align:right;padding:7px 8px;font-size:13px;opacity:0.7"
+        oninput="_updateManual(${r.id},'p2',this.value)"
+        onkeydown="if(event.key==='Enter'){_updateManual(${r.id},'p2',this.value);addManualRow();}">
+
+      <!-- Slett -->
+      <button onclick="_removeManualRow(${r.id})"
+        style="background:rgba(255,59,92,0.1);border:1px solid rgba(255,59,92,0.35);border-radius:4px;
+               color:#ff3b5c;font-size:13px;padding:5px 8px;cursor:pointer;line-height:1">✕</button>
+    </div>
+  `).join('');
+}
+
+function clearManualData() {
+  _manualRows = [];
+  _manualId   = 0;
+  _editingFileIdx = null;
+  _renderManualRows();
+  document.getElementById('manualFeedback').textContent = '';
+}
+
+let _editingFileIdx = null;
+
+function editManualFile(idx) {
+  const f = FILES[idx];
+  if (!f) return;
+  _editingFileIdx = idx;
+
+  // Extract date from first row
+  const firstRow = f.rows[0];
+  const dt = firstRow.dt;
+  const dd = String(dt.getDate()).padStart(2,'0');
+  const mm = String(dt.getMonth()+1).padStart(2,'0');
+  const yyyy = dt.getFullYear();
+  document.getElementById('manualDate').value = `${dd}.${mm}.${yyyy}`;
+  document.getElementById('manualFileName').value = f.name.replace('.manuell','');
+
+  // Rebuild _manualRows from file rows
+  _manualRows = [];
+  _manualId = 0;
+  f.rows.forEach(r => {
+    const id = ++_manualId;
+    const hh = String(r.dt.getHours()).padStart(2,'0');
+    const mn = String(r.dt.getMinutes()).padStart(2,'0');
+    const ss = String(r.dt.getSeconds()).padStart(2,'0');
+    _manualRows.push({
+      id,
+      tid: `${hh}:${mn}:${ss}`,
+      p1: r.p1 > 0 ? String(r.p1) : '',
+      p2: r.p2 > 0 ? String(r.p2) : ''
+    });
+  });
+
+  _renderManualRows();
+
+  // Open panel and scroll to it
+  const panel = document.getElementById('manualPanel');
+  panel.classList.remove('collapsed');
+  document.getElementById('manualToggleIcon').textContent = '▲ Lukk';
+  document.getElementById('manualFeedback').style.color = 'var(--accent4)';
+  document.getElementById('manualFeedback').textContent = '✎ Redigerer: ' + f.name;
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function commitManualData() {
+  const dateStr  = document.getElementById('manualDate').value.trim();
+  const fileName = (document.getElementById('manualFileName').value.trim() || 'manuell') + '.manuell';
+  const feedback = document.getElementById('manualFeedback');
+
+  if (!dateStr) { feedback.style.color='var(--danger)'; feedback.textContent='⚠ Fyll inn dato først.'; return; }
+  const dm = dateStr.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!dm) { feedback.style.color='var(--danger)'; feedback.textContent='⚠ Ugyldig datoformat. Bruk dd.mm.åååå'; return; }
+  const [, dd, mm, yyyy] = dm;
+
+  const rows = [];
+  let t0 = null;
+  let skipped = 0;
+
+  _manualRows.forEach((r, i) => {
+    if (!r.tid) { skipped++; return; }
+    // Normalize tid to HH:MM:SS regardless of how user typed it
+    const rawDigits = r.tid.replace(/[^0-9]/g,'');
+    if (rawDigits.length < 4) { skipped++; return; }
+    const digs = rawDigits.slice(0,6).padEnd(6,'0');
+    const tidNorm = digs.slice(0,2)+':'+digs.slice(2,4)+':'+digs.slice(4,6);
+    const dt = new Date(`${yyyy}-${mm}-${dd}T${tidNorm}`);
+    if (isNaN(dt)) { skipped++; return; }
+    const p1 = parseFloat(r.p1);
+    if (isNaN(p1)) { skipped++; return; }
+    const p2 = r.p2 !== '' ? parseFloat(r.p2) : -1;
+    if (t0 === null) t0 = dt;
+    const t_min = (dt - t0) / 60000;
+    const dtStr = `${dd}.${mm}.${yyyy} ${tidNorm}`;
+    rows.push({ idx: i+1, dt, dtStr, t_min, p1, p2: isNaN(p2) ? -1 : p2, ts: dt.getTime() });
+  });
+
+  if (rows.length < 2) {
+    feedback.style.color = 'var(--danger)';
+    feedback.textContent = '⚠ Trenger minst 2 gyldige rader. Sjekk klokkeslett og T1-verdi.';
+    return;
+  }
+
+  // Check if rows are in chronological order
+  let outOfOrder = false;
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i].ts < rows[i-1].ts) { outOfOrder = true; break; }
+  }
+  if (outOfOrder) {
+    rows.sort((a, b) => a.ts - b.ts);
+    // Recalculate t_min after sort
+    const t0sort = rows[0].ts;
+    rows.forEach((r, i) => { r.t_min = (r.ts - t0sort) / 60000; r.idx = i+1; });
+    // sorted
+  }
+
+  if (_editingFileIdx !== null) {
+    // Replace existing file
+    const existing = FILES[_editingFileIdx];
+    FILES[_editingFileIdx] = { name: existing.name, color: existing.color, colorClass: existing.colorClass, rows };
+    _editingFileIdx = null;
+  } else {
+    let finalName = fileName;
+    let suffix = 1;
+    while (FILES.find(f => f.name === finalName))
+      finalName = fileName.replace('.manuell','') + '_' + (++suffix) + '.manuell';
+    const colorIdx = FILES.length % COLORS.length;
+    FILES.push({ name: finalName, color: COLORS[colorIdx], colorClass: `fc${colorIdx}`, rows });
+  }
+
+  const sortWarning = outOfOrder ? ' — ⚠ rader var ute av rekkefølge og er sortert automatisk' : '';
+  const skipMsg = (skipped > 0) ? ' (' + skipped + ' hoppet over)' : '';
+  feedback.style.color = outOfOrder ? 'var(--accent4)' : 'var(--accent3)';
+  feedback.textContent = '✓ ' + rows.length + ' datapunkt lagt til' + skipMsg + sortWarning;
+
+  clearManualData();
+  document.getElementById('manualPanel').classList.add('collapsed');
+  document.getElementById('manualToggleIcon').textContent = '▼ Åpne';
+  renderAll();
+}
+
+// ============================================================
+//  TOGGLE CHANNELS
+// ============================================================
+function toggleChannel(ch) {
+  if (ch === 1) {
+    ch1On = !ch1On;
+    document.getElementById('btn-ch1').classList.toggle('active', ch1On);
+  } else {
+    ch2On = !ch2On;
+    document.getElementById('btn-ch2').classList.toggle('active', ch2On);
+  }
+  renderAll();
+}
+
+// ============================================================
+//  MAIN RENDER
+// ============================================================
+function renderAll() {
+  renderFileChips();
+  const hasDat = FILES.length > 0;
+  document.getElementById('emptyState').style.display = hasDat ? 'none' : 'block';
+  document.getElementById('dashboard').style.display = hasDat ? 'block' : 'none';
+
+  const dot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+
+  if (!hasDat) {
+    dot.classList.remove('active');
+    statusText.textContent = 'Ingen data lastet';
+    return;
+  }
+
+  dot.classList.add('active');
+  const total = FILES.reduce((s, f) => s + f.rows.length, 0);
+  statusText.textContent = `${FILES.length} fil(er) • ${total} pkt`;
+
+  if (document.getElementById('rangeTo').value === '' || document.getElementById('rangeTo').value === '99999') {
+    initRange();
+  } else {
+    // Utvid tidsvinduet automatisk om ny data går lenger enn gjeldende "Til"
+    const maxMin = Math.max(...FILES.map(f => f.rows[f.rows.length-1]?.t_min || 0));
+    const currentTo = parseFloat(document.getElementById('rangeTo').value) || 0;
+    if (Math.ceil(maxMin) > currentTo) {
+      document.getElementById('rangeTo').value = Math.ceil(maxMin);
+    }
+  }
+
+  updateStats();
+  renderCharts();
+  renderTable();
+  calcPressureDrop();
+  try { renderHoldResult(); } catch(e) { console.warn('renderHoldResult:', e); }
+}
+</script>
+</body>
+</html>
