@@ -12,10 +12,11 @@
     "test": "vitest run --exclude \"tests/smoke/**\"",
     "preview:web": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "preview:prod": "npm run build && vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "smoke:fixture": "node scripts/check-fixture.mjs",
     "smoke:web": "node scripts/smoke-web.mjs",
     "smoke:prod": "npm run build && node scripts/smoke-prod.mjs",
     "smoke:electron": "npm run build && playwright test",
-    "verify": "npm run build && npm test && npm run smoke:web && npm run smoke:prod && npm run smoke:electron",
+    "verify": "npm run build && npm test && npm run smoke:fixture && npm run smoke:web && npm run smoke:prod && npm run smoke:electron",
     "dist": "npm run test && npm run build && electron-builder"
   },
   "build": {
