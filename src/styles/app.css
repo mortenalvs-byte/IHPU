@@ -288,3 +288,88 @@ html, body {
 .period-controls button:active {
   background: rgba(65, 216, 255, 0.16);
 }
+
+.report-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.6rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.report-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.report-form input,
+.report-form textarea {
+  padding: 0.45rem 0.6rem;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.95rem;
+  resize: vertical;
+}
+
+.report-form input:focus,
+.report-form textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.report-form-comment {
+  grid-column: 1 / -1;
+}
+
+.report-preview-grid {
+  margin: 0.75rem 0;
+}
+
+.export-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0.5rem 0;
+}
+
+.export-actions button {
+  padding: 0.55rem 1rem;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.9rem;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+.export-actions button:hover:not([disabled]) {
+  background: rgba(65, 216, 255, 0.08);
+}
+
+.export-actions button[disabled] {
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.export-status {
+  margin: 0;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.export-status.export-success {
+  color: var(--pass);
+}
+
+.export-status.export-error {
+  color: var(--fail);
+}

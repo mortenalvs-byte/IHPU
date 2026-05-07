@@ -9,6 +9,14 @@ import { evaluateHoldPeriod } from '../domain/holdPeriod';
 import { parseIhpuPressureLog } from '../domain/ihpuParser';
 import { calculatePressureDrop, selectRowsInTimeRange } from '../domain/pressureAnalysis';
 import type { PressureChannel, PressureRow } from '../domain/types';
+import {
+  buildReportCsv,
+  buildSafeReportFilename,
+  triggerCsvDownload
+} from '../reports/csvExport';
+import { buildCustomerReportPdf, triggerPdfDownload } from '../reports/pdfReport';
+import { buildReportModel } from '../reports/reportModel';
+import type { ReportMetadata } from '../reports/reportTypes';
 import { parseTimeParts, toDeterministicTimestampMs } from '../utils/dateTime';
 import { msToTimeText, render } from './render';
 import type { AppState } from './state';
@@ -105,6 +113,122 @@ export function wireEvents(ctx: AppContext): void {
       ctx.chart.resetZoom();
     });
   }
+
+  // Report metadata inputs
+  const metadataMap: Array<[string, keyof ReportMetadata]> = [
+    ['report-customer-input', 'customerName'],
+    ['report-project-input', 'projectNumber'],
+    ['report-location-input', 'location'],
+    ['report-test-date-input', 'testDate'],
+    ['report-ihpu-serial-input', 'ihpuSerial'],
+    ['report-rov-system-input', 'rovSystem'],
+    ['report-operator-input', 'operatorName'],
+    ['report-comment-input', 'comment']
+  ];
+  for (const [testId, key] of metadataMap) {
+    const input = qs<HTMLInputElement | HTMLTextAreaElement>(ctx.root, testId);
+    if (!input) continue;
+    input.addEventListener('input', () => {
+      ctx.state.reportMetadata = {
+        ...ctx.state.reportMetadata,
+        [key]: input.value
+      };
+      render(ctx.root, ctx.state);
+    });
+  }
+
+  // Export buttons
+  const exportCsvBtn = qs<HTMLButtonElement>(ctx.root, 'export-csv-button');
+  if (exportCsvBtn) {
+    exportCsvBtn.addEventListener('click', () => {
+      handleExportCsv(ctx);
+    });
+  }
+
+  const exportPdfBtn = qs<HTMLButtonElement>(ctx.root, 'export-pdf-button');
+  if (exportPdfBtn) {
+    exportPdfBtn.addEventListener('click', () => {
+      handleExportPdf(ctx);
+    });
+  }
+}
+
+function handleExportCsv(ctx: AppContext): void {
+  const result = buildReportModel({
+    parseResult: ctx.state.parseResult,
+    baselineDrop: ctx.state.baselineDrop,
+    targetDrop: ctx.state.targetDrop,
+    holdResult: ctx.state.holdResult,
+    selectedChannel: ctx.state.selectedChannel,
+    maxDropPct: ctx.state.maxDropPct,
+    targetPressure: ctx.state.targetPressure,
+    selectedFromTimestampMs: ctx.state.selectedFromTimestampMs,
+    selectedToTimestampMs: ctx.state.selectedToTimestampMs,
+    selectedFromTimeText: ctx.state.selectedFromTimeText,
+    selectedToTimeText: ctx.state.selectedToTimeText,
+    selectedFileName: ctx.state.selectedFileName,
+    reportMetadata: ctx.state.reportMetadata
+  });
+  if (!result.ok) {
+    ctx.state.exportStatus = { kind: 'error', message: `CSV-eksport feilet: ${result.error.message}` };
+    render(ctx.root, ctx.state);
+    return;
+  }
+  try {
+    const rows = ctx.state.parseResult?.rows ?? [];
+    const csvText = buildReportCsv(result.report, rows);
+    const filename = buildSafeReportFilename(result.report, 'csv');
+    const sizeBytes = new TextEncoder().encode(csvText).length;
+    triggerCsvDownload(csvText, filename);
+    ctx.state.exportStatus = {
+      kind: 'success',
+      message: `CSV exported: ${filename} (${sizeBytes} bytes)`
+    };
+  } catch (err) {
+    ctx.state.exportStatus = {
+      kind: 'error',
+      message: `CSV-eksport feilet: ${err instanceof Error ? err.message : String(err)}`
+    };
+  }
+  render(ctx.root, ctx.state);
+}
+
+function handleExportPdf(ctx: AppContext): void {
+  const result = buildReportModel({
+    parseResult: ctx.state.parseResult,
+    baselineDrop: ctx.state.baselineDrop,
+    targetDrop: ctx.state.targetDrop,
+    holdResult: ctx.state.holdResult,
+    selectedChannel: ctx.state.selectedChannel,
+    maxDropPct: ctx.state.maxDropPct,
+    targetPressure: ctx.state.targetPressure,
+    selectedFromTimestampMs: ctx.state.selectedFromTimestampMs,
+    selectedToTimestampMs: ctx.state.selectedToTimestampMs,
+    selectedFromTimeText: ctx.state.selectedFromTimeText,
+    selectedToTimeText: ctx.state.selectedToTimeText,
+    selectedFileName: ctx.state.selectedFileName,
+    reportMetadata: ctx.state.reportMetadata
+  });
+  if (!result.ok) {
+    ctx.state.exportStatus = { kind: 'error', message: `PDF-eksport feilet: ${result.error.message}` };
+    render(ctx.root, ctx.state);
+    return;
+  }
+  try {
+    const buffer = buildCustomerReportPdf(result.report);
+    const filename = buildSafeReportFilename(result.report, 'pdf');
+    triggerPdfDownload(buffer, filename);
+    ctx.state.exportStatus = {
+      kind: 'success',
+      message: `PDF exported: ${filename} (${buffer.byteLength} bytes)`
+    };
+  } catch (err) {
+    ctx.state.exportStatus = {
+      kind: 'error',
+      message: `PDF-eksport feilet: ${err instanceof Error ? err.message : String(err)}`
+    };
+  }
+  render(ctx.root, ctx.state);
 }
 
 async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Promise<void> {
