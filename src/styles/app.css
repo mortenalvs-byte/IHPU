@@ -5,6 +5,9 @@
   --accent: #41d8ff;
   --panel: #131a22;
   --border: #1f2a36;
+  --pass: #66e3a4;
+  --fail: #ff6b6b;
+  --unknown: #8aa0b8;
   font-family: 'Barlow', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   color-scheme: dark;
 }
@@ -28,7 +31,7 @@ html, body {
 }
 
 .app-header {
-  padding: 1.5rem 2rem 1rem;
+  padding: 1.25rem 2rem 0.75rem;
   border-bottom: 1px solid var(--border);
 }
 
@@ -37,6 +40,7 @@ html, body {
   font-family: 'Share Tech Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
   letter-spacing: 0.02em;
   color: var(--accent);
+  font-size: 1.6rem;
 }
 
 .subtitle {
@@ -47,47 +51,160 @@ html, body {
 
 .app-main {
   flex: 1;
-  padding: 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.status-panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 1.25rem;
+  padding: 1.5rem 2rem 2rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  max-width: 1080px;
+  width: 100%;
+  margin: 0 auto;
 }
 
-.status {
+.app-ready {
   margin: 0;
-  font-family: 'Share Tech Mono', ui-monospace, monospace;
-  color: var(--muted);
-}
-
-.upload-zone {
-  border: 1px dashed var(--border);
-  border-radius: 4px;
-  padding: 1rem;
-  color: var(--muted);
-  text-align: center;
-}
-
-.upload-zone p {
-  margin: 0 0 0.5rem;
-}
-
-.bootstrap-ok {
-  margin: 0;
-  padding: 0.75rem 1rem;
+  padding: 0.5rem 0.875rem;
   background: rgba(65, 216, 255, 0.08);
   border: 1px solid var(--accent);
   border-radius: 4px;
   color: var(--accent);
   font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.85rem;
+  align-self: flex-start;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+}
+
+.card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  color: var(--accent);
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.upload-section {
+  background: var(--panel);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+}
+
+.upload-section h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: var(--accent);
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.upload-section input[type='file'] {
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.4rem;
+  font-family: inherit;
+  width: 100%;
+  max-width: 480px;
+}
+
+.file-status {
+  margin: 0.5rem 0 0;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.summary-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) 1fr;
+  gap: 0.4rem 1rem;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.92rem;
+}
+
+.summary-grid dt {
+  color: var(--muted);
+}
+
+.summary-grid dd {
+  margin: 0;
+  color: var(--fg);
+}
+
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.controls-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.controls-grid select,
+.controls-grid input {
+  padding: 0.45rem 0.6rem;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.95rem;
+}
+
+.controls-grid input:focus,
+.controls-grid select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.hold-status {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 4px;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 1.4rem;
+  letter-spacing: 0.08em;
   text-align: center;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.hold-status.hold-pass {
+  border-color: var(--pass);
+  color: var(--pass);
+  background: rgba(102, 227, 164, 0.08);
+}
+
+.hold-status.hold-fail {
+  border-color: var(--fail);
+  color: var(--fail);
+  background: rgba(255, 107, 107, 0.08);
+}
+
+.hold-status.hold-unknown {
+  border-color: var(--unknown);
+  color: var(--unknown);
+  background: rgba(138, 160, 184, 0.05);
+}
+
+.issues-section [data-testid='issue-summary'] {
+  margin: 0;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  color: var(--muted);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
 }
