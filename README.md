@@ -39,6 +39,30 @@ npm test            # vitest run
 npm run dist        # full installer (electron-builder, NSIS target)
 ```
 
+## Development verification
+
+The preview/smoke harness lets every feature PR be verified deterministically before
+review. See [docs/development/preview-and-smoke.md](docs/development/preview-and-smoke.md)
+and [docs/development/test-data-contract.md](docs/development/test-data-contract.md)
+for full details.
+
+```bash
+npm run smoke:fixture    # canonical raw fixture sha256 + size gate
+npm run preview:web      # vite dev server on 127.0.0.1:5173
+npm run preview:prod     # build + vite preview on 127.0.0.1:4173
+npm run smoke:web        # headless dev smoke
+npm run smoke:prod       # headless prod smoke (relative-asset bundle)
+npm run smoke:electron   # Playwright Electron smoke against dist-electron/main.js
+npm run verify           # build + test + fixture + all runtime smokes (PR gate)
+```
+
+`test-data/Dekk test Seal T.2` is the **canonical raw fixture** — its sha256 and size
+are locked, and every parser/analysis/chart/report PR must work against it. Don't
+edit the file in place; replacing it requires a deliberate fixture-contract PR.
+
+`Start IHPU.bat` and the packaged Windows installer still need manual desktop testing
+before any release — the harness covers ~80% of the app surface, not the OS shell.
+
 ## Migration roadmap
 
 1. ~~Bootstrap structure~~ (done)

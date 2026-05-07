@@ -7,8 +7,9 @@ on:
     branches: [main]
 
 jobs:
-  build-test:
+  verify:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -21,8 +22,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
-        run: npm test
+      - name: Verify (build + test + fixture + web/prod/electron smoke)
+        run: npm run verify
 
-      - name: Build
-        run: npm run build
+      - name: Upload smoke artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-artifacts
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
