@@ -115,3 +115,102 @@ export interface ParseOptions {
   /** Default true. When false, rows are emitted in source order (UNSORTED_INPUT warning still added if applicable). */
   sortRows?: boolean;
 }
+
+// =====================================================================
+// Analysis types — pressure-drop calculation and hold-period evaluation.
+//
+// These live alongside the parser types so the whole domain layer surfaces
+// from a single import path. They depend only on PressureRow / PressureChannel
+// and never on DOM/Electron/charts.
+// =====================================================================
+
+export type AnalysisIssueCode =
+  | 'NO_VALID_ROWS'
+  | 'INSUFFICIENT_POINTS'
+  | 'ZERO_DURATION'
+  | 'CHANNEL_NOT_PRESENT'
+  | 'EMPTY_RANGE'
+  | 'INVALID_RANGE'
+  | 'MISSING_CRITERIA'
+  | 'INVALID_REFERENCE';
+
+export type AnalysisSeverity = 'warning' | 'error';
+
+export interface AnalysisIssue {
+  severity: AnalysisSeverity;
+  code: AnalysisIssueCode;
+  message: string;
+  detail?: string;
+}
+
+export interface PressureDropOptions {
+  /**
+   * Reference pressure for dropPct calculation. When omitted, the first valid
+   * row's pressure is used as the reference.
+   *
+   * dropPct = (dropBar / Math.abs(reference)) * 100, reported in PERCENT POINTS.
+   * The absolute value is intentional — for sensors that read negative (e.g. T1
+   * in the canonical fixture, where all values are negative), dividing by the
+   * raw negative reference would flip the sign and report a "drop" when
+   * pressure actually increased. Math.abs keeps the sign of dropPct aligned
+   * with the sign of dropBar.
+   */
+  targetPressure?: number;
+}
+
+export interface PressureDropResult {
+  channel: PressureChannel;
+  /** Number of rows used for the calculation (excludes nulls and out-of-range). */
+  rowsUsed: number;
+  startPressure: number | null;
+  endPressure: number | null;
+  startTimestampMs: number | null;
+  endTimestampMs: number | null;
+  /**
+   * Reference pressure actually used for dropPct. Equals options.targetPressure
+   * when supplied, otherwise startPressure. Null when no reference could be
+   * determined.
+   */
+  referencePressure: number | null;
+  durationMinutes: number | null;
+  /** dropBar = startPressure - endPressure. Positive = pressure dropped. Negative = pressure increased. */
+  dropBar: number | null;
+  /**
+   * dropPct = (dropBar / Math.abs(referencePressure)) * 100, in PERCENT POINTS.
+   * A 5 % drop is reported as 5, not 0.05. Sign matches dropBar.
+   */
+  dropPct: number | null;
+  dropBarPerMinute: number | null;
+  dropBarPerHour: number | null;
+  warnings: AnalysisIssue[];
+  errors: AnalysisIssue[];
+}
+
+export interface HoldPeriodCriteria {
+  /** Optional inclusive start of the time range (ms key). When omitted, range starts at first row. */
+  fromTimestampMs?: number;
+  /** Optional inclusive end of the time range (ms key). When omitted, range ends at last row. */
+  toTimestampMs?: number;
+  /** Reference pressure for dropPct. Forwarded to calculatePressureDrop as options.targetPressure. */
+  targetPressure?: number;
+  /**
+   * Maximum allowed dropPct, in PERCENT POINTS — e.g. 5 means 5 %, not 0.05.
+   * Compared directly against PressureDropResult.dropPct, which uses the same
+   * unit. Without this, evaluateHoldPeriod returns status: 'UNKNOWN' because
+   * there is no threshold to compare against.
+   */
+  maxDropPct?: number;
+}
+
+export type HoldPeriodStatus = 'PASS' | 'FAIL' | 'UNKNOWN';
+
+export interface HoldPeriodResult {
+  status: HoldPeriodStatus;
+  channel: PressureChannel;
+  /** Echo of the criteria the evaluation used, for downstream traceability. */
+  criteria: HoldPeriodCriteria;
+  /** Underlying drop calculation. Always present, even when status is UNKNOWN. */
+  drop: PressureDropResult;
+  warnings: AnalysisIssue[];
+  errors: AnalysisIssue[];
+}
