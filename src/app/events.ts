@@ -4,16 +4,19 @@
 // and analysis modules are pure domain functions — they receive the text and
 // return structured ParseResult / PressureDropResult / HoldPeriodResult.
 
+import type { PressureChart, SelectedRange } from '../charts/pressureChart';
 import { evaluateHoldPeriod } from '../domain/holdPeriod';
 import { parseIhpuPressureLog } from '../domain/ihpuParser';
-import { calculatePressureDrop } from '../domain/pressureAnalysis';
-import type { PressureChannel } from '../domain/types';
-import { render } from './render';
+import { calculatePressureDrop, selectRowsInTimeRange } from '../domain/pressureAnalysis';
+import type { PressureChannel, PressureRow } from '../domain/types';
+import { parseTimeParts, toDeterministicTimestampMs } from '../utils/dateTime';
+import { msToTimeText, render } from './render';
 import type { AppState } from './state';
 
 interface AppContext {
   root: HTMLElement;
   state: AppState;
+  chart: PressureChart;
 }
 
 export function wireEvents(ctx: AppContext): void {
@@ -21,6 +24,10 @@ export function wireEvents(ctx: AppContext): void {
   const channelSelect = qs<HTMLSelectElement>(ctx.root, 'channel-select');
   const maxDropInput = qs<HTMLInputElement>(ctx.root, 'max-drop-input');
   const targetInput = qs<HTMLInputElement>(ctx.root, 'target-pressure-input');
+  const fromInput = qs<HTMLInputElement>(ctx.root, 'period-from-input');
+  const toInput = qs<HTMLInputElement>(ctx.root, 'period-to-input');
+  const resetPeriodBtn = qs<HTMLButtonElement>(ctx.root, 'reset-period-selection');
+  const resetZoomBtn = qs<HTMLButtonElement>(ctx.root, 'reset-chart-zoom');
 
   if (fileInput) {
     fileInput.addEventListener('change', () => {
@@ -65,6 +72,39 @@ export function wireEvents(ctx: AppContext): void {
       render(ctx.root, ctx.state);
     });
   }
+
+  if (fromInput) {
+    fromInput.addEventListener('input', () => {
+      ctx.state.selectedFromTimeText = fromInput.value;
+      applyPeriodInputs(ctx);
+    });
+  }
+
+  if (toInput) {
+    toInput.addEventListener('input', () => {
+      ctx.state.selectedToTimeText = toInput.value;
+      applyPeriodInputs(ctx);
+    });
+  }
+
+  if (resetPeriodBtn) {
+    resetPeriodBtn.addEventListener('click', () => {
+      ctx.state.selectedFromTimestampMs = null;
+      ctx.state.selectedToTimestampMs = null;
+      ctx.state.selectedFromTimeText = '';
+      ctx.state.selectedToTimeText = '';
+      ctx.state.chartError = null;
+      ctx.chart.setSelectedRange(null);
+      recomputeAnalysis(ctx);
+      render(ctx.root, ctx.state);
+    });
+  }
+
+  if (resetZoomBtn) {
+    resetZoomBtn.addEventListener('click', () => {
+      ctx.chart.resetZoom();
+    });
+  }
 }
 
 async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Promise<void> {
@@ -72,7 +112,15 @@ async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Pro
   if (!file) return;
 
   ctx.state.userMessage = null;
+  ctx.state.chartError = null;
   ctx.state.selectedFileName = file.name;
+
+  // Reset any prior period selection — a new file means a new range.
+  ctx.state.selectedFromTimestampMs = null;
+  ctx.state.selectedToTimestampMs = null;
+  ctx.state.selectedFromTimeText = '';
+  ctx.state.selectedToTimeText = '';
+  ctx.chart.setSelectedRange(null);
 
   let text: string;
   try {
@@ -82,6 +130,8 @@ async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Pro
     ctx.state.baselineDrop = null;
     ctx.state.targetDrop = null;
     ctx.state.holdResult = null;
+    ctx.state.chartReady = false;
+    ctx.chart.destroy();
     ctx.state.userMessage = {
       severity: 'error',
       text: `Kunne ikke lese filen: ${err instanceof Error ? err.message : String(err)}`
@@ -93,8 +143,6 @@ async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Pro
   try {
     ctx.state.parseResult = parseIhpuPressureLog(text, { sourceName: file.name });
   } catch (err) {
-    // parseIhpuPressureLog is documented as never-throwing, but we guard
-    // anyway so the UI never goes blank on an unexpected runtime error.
     ctx.state.parseResult = null;
     ctx.state.userMessage = {
       severity: 'error',
@@ -103,7 +151,90 @@ async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Pro
   }
 
   recomputeAnalysis(ctx);
+
+  // Mount chart with the freshly parsed data.
+  if (ctx.state.parseResult && ctx.state.parseResult.rows.length > 0) {
+    try {
+      ctx.chart.setData(ctx.state.parseResult.rows);
+      ctx.state.chartReady = true;
+      ctx.state.chartError = null;
+    } catch (err) {
+      ctx.state.chartReady = false;
+      ctx.state.chartError = err instanceof Error ? err.message : String(err);
+    }
+  } else {
+    ctx.chart.destroy();
+    ctx.state.chartReady = false;
+  }
+
   render(ctx.root, ctx.state);
+}
+
+function applyPeriodInputs(ctx: AppContext): void {
+  const pr = ctx.state.parseResult;
+  if (!pr || pr.rows.length === 0) {
+    return;
+  }
+
+  const fromText = ctx.state.selectedFromTimeText.trim();
+  const toText = ctx.state.selectedToTimeText.trim();
+
+  const fromMs = fromText === '' ? null : timeTextToMsOnLogDate(fromText, pr.rows);
+  const toMs = toText === '' ? null : timeTextToMsOnLogDate(toText, pr.rows);
+
+  if (fromText !== '' && fromMs === null) {
+    ctx.state.chartError = `Ugyldig fra-tid: "${fromText}". Bruk HH:MM eller HH:MM:SS.`;
+    render(ctx.root, ctx.state);
+    return;
+  }
+  if (toText !== '' && toMs === null) {
+    ctx.state.chartError = `Ugyldig til-tid: "${toText}". Bruk HH:MM eller HH:MM:SS.`;
+    render(ctx.root, ctx.state);
+    return;
+  }
+
+  ctx.state.chartError = null;
+
+  // Normalise: if both are present and from > to, swap them.
+  let normFrom = fromMs;
+  let normTo = toMs;
+  if (normFrom !== null && normTo !== null && normFrom > normTo) {
+    [normFrom, normTo] = [normTo, normFrom];
+  }
+
+  ctx.state.selectedFromTimestampMs = normFrom;
+  ctx.state.selectedToTimestampMs = normTo;
+  updateChartHighlight(ctx);
+  recomputeAnalysis(ctx);
+  render(ctx.root, ctx.state);
+}
+
+/**
+ * Drag-select callback from the chart. Updates state and re-runs analysis.
+ */
+export function handleChartPeriodSelected(ctx: AppContext, range: SelectedRange): void {
+  ctx.state.selectedFromTimestampMs = range.fromMs;
+  ctx.state.selectedToTimestampMs = range.toMs;
+  ctx.state.selectedFromTimeText = msToTimeText(range.fromMs);
+  ctx.state.selectedToTimeText = msToTimeText(range.toMs);
+  ctx.state.chartError = null;
+  ctx.chart.setSelectedRange({ fromMs: range.fromMs, toMs: range.toMs });
+  recomputeAnalysis(ctx);
+  render(ctx.root, ctx.state);
+}
+
+function updateChartHighlight(ctx: AppContext): void {
+  const fromMs = ctx.state.selectedFromTimestampMs;
+  const toMs = ctx.state.selectedToTimestampMs;
+  if (fromMs === null && toMs === null) {
+    ctx.chart.setSelectedRange(null);
+    return;
+  }
+  const pr = ctx.state.parseResult;
+  if (!pr || pr.rows.length === 0) return;
+  const effectiveFrom = fromMs ?? pr.rows[0].timestampMs;
+  const effectiveTo = toMs ?? pr.rows[pr.rows.length - 1].timestampMs;
+  ctx.chart.setSelectedRange({ fromMs: effectiveFrom, toMs: effectiveTo });
 }
 
 function recomputeAnalysis(ctx: AppContext): void {
@@ -116,21 +247,48 @@ function recomputeAnalysis(ctx: AppContext): void {
   }
 
   const channel = ctx.state.selectedChannel;
+  const fromMs = ctx.state.selectedFromTimestampMs ?? undefined;
+  const toMs = ctx.state.selectedToTimestampMs ?? undefined;
 
-  ctx.state.baselineDrop = calculatePressureDrop(pr.rows, channel);
+  // Range-filtering model: the UI pre-filters rows ONCE via the domain helper
+  // selectRowsInTimeRange. The downstream domain functions (calculatePressureDrop,
+  // evaluateHoldPeriod) then receive already-narrowed rows and we deliberately
+  // do NOT also pass fromTimestampMs/toTimestampMs to evaluateHoldPeriod —
+  // that would refilter an already-filtered list and silently work today
+  // because the result is identical, but it is confusing and brittle.
+  // Single source of filtering = single source of truth for the analyzed range.
+  const rows = selectRowsInTimeRange(pr.rows, fromMs, toMs);
+
+  ctx.state.baselineDrop = calculatePressureDrop(rows, channel);
 
   if (ctx.state.targetPressure !== null && Number.isFinite(ctx.state.targetPressure)) {
-    ctx.state.targetDrop = calculatePressureDrop(pr.rows, channel, {
+    ctx.state.targetDrop = calculatePressureDrop(rows, channel, {
       targetPressure: ctx.state.targetPressure
     });
   } else {
     ctx.state.targetDrop = null;
   }
 
-  ctx.state.holdResult = evaluateHoldPeriod(pr.rows, channel, {
+  ctx.state.holdResult = evaluateHoldPeriod(rows, channel, {
     targetPressure: ctx.state.targetPressure ?? undefined,
     maxDropPct: ctx.state.maxDropPct
   });
+}
+
+function timeTextToMsOnLogDate(timeText: string, rows: PressureRow[]): number | null {
+  if (rows.length === 0) return null;
+  const parsed = parseTimeParts(timeText);
+  if (!parsed) return null;
+  // Use the first row's date as the canonical date for time-only inputs.
+  // This works for single-day logs (the canonical fixture pattern). For
+  // multi-day logs, the first occurrence wins — documented limitation.
+  const iso = rows[0].localIso;
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  return toDeterministicTimestampMs({ year, month, day, ...parsed });
 }
 
 function qs<T extends HTMLElement>(root: HTMLElement, testId: string): T | null {

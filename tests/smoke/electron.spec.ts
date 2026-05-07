@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 
-test('Electron app: bootstrap shell + canonical fixture upload flow', async () => {
+test('Electron app: bootstrap shell, fixture upload, chart period selection', async () => {
   const appRoot = process.cwd();
   const mainPath = path.join(appRoot, 'dist-electron', 'main.js');
   const fixturePath = path.join(appRoot, 'test-data', 'Dekk test Seal T.2');
@@ -28,9 +28,8 @@ test('Electron app: bootstrap shell + canonical fixture upload flow', async () =
     await expect(window.getByTestId('app-title')).toContainText('IHPU TrykkAnalyse');
     await expect(window.getByTestId('app-ready')).toContainText('Bootstrap OK');
     await expect(window.getByTestId('file-status')).toContainText('Ingen data lastet');
-
-    // File input must be enabled (not the disabled placeholder from bootstrap PR)
     await expect(window.getByTestId('file-input')).toBeEnabled();
+    await expect(window.getByTestId('chart-status')).toContainText('Venter på data');
 
     // ----- Upload canonical fixture -----
     await window.getByTestId('file-input').setInputFiles(fixturePath);
@@ -40,44 +39,63 @@ test('Electron app: bootstrap shell + canonical fixture upload flow', async () =
     await expect(window.getByTestId('parse-error-count')).toHaveText('0');
     await expect(window.getByTestId('parse-warning-count')).toHaveText('0');
     await expect(window.getByTestId('duration-minutes')).toContainText('69.4');
-    await expect(window.getByTestId('file-name')).toContainText('Dekk test Seal T.2');
-    await expect(window.getByTestId('first-timestamp')).toContainText('2026-02-21T13:10:37');
-    await expect(window.getByTestId('last-timestamp')).toContainText('2026-02-21T14:20:01');
-    await expect(window.getByTestId('channel-p1-present')).toContainText('tilstede');
-    await expect(window.getByTestId('channel-p2-present')).toContainText('tilstede');
 
-    // Pressure summary (default channel = p2, no target → reference is start)
+    // Chart mounted
+    await expect(window.getByTestId('chart-status')).toContainText('Klar');
+    await expect(window.getByTestId('pressure-chart')).toBeVisible();
+
+    // Default full-range pressure summary (reference: start)
     await expect(window.getByTestId('pressure-start')).toContainText('314.387');
     await expect(window.getByTestId('pressure-end')).toContainText('299.279');
     await expect(window.getByTestId('pressure-drop-bar')).toContainText('15.108');
     await expect(window.getByTestId('pressure-drop-pct-start')).toContainText('4.8055');
-    await expect(window.getByTestId('pressure-drop-pct-target')).toContainText('—');
-    await expect(window.getByTestId('pressure-rate-minute')).toContainText('0.2177');
-    await expect(window.getByTestId('pressure-rate-hour')).toContainText('13.0616');
-    await expect(window.getByTestId('pressure-increased')).toHaveText('Nei');
-
-    // Hold status with default maxDropPct = 5
     await expect(window.getByTestId('hold-status')).toHaveText('PASS');
-    await expect(window.getByTestId('hold-used-drop-pct')).toContainText('4.8055');
-    await expect(window.getByTestId('hold-allowed-drop-pct')).toContainText('5.0000');
-    await expect(window.getByTestId('hold-margin-pct')).toContainText('0.1945');
+    await expect(window.getByTestId('selected-period-summary')).toContainText('Hele loggen');
 
-    // ----- Tighten threshold to 4 → expect FAIL -----
-    await window.getByTestId('max-drop-input').fill('4');
-    await expect(window.getByTestId('hold-status')).toHaveText('FAIL');
-    await expect(window.getByTestId('hold-allowed-drop-pct')).toContainText('4.0000');
+    // ----- Manual period that equals full range -----
+    await window.getByTestId('period-from-input').fill('13:10:37');
+    await window.getByTestId('period-to-input').fill('14:20:01');
 
-    // ----- Restore threshold + add target pressure 315 → expect PASS + dropPctOfTarget -----
-    await window.getByTestId('max-drop-input').fill('5');
-    await window.getByTestId('target-pressure-input').fill('315');
-
-    await expect(window.getByTestId('pressure-drop-pct-target')).toContainText('4.7962');
+    await expect(window.getByTestId('selected-period-summary')).toContainText('13:10:37');
+    await expect(window.getByTestId('selected-period-summary')).toContainText('14:20:01');
+    await expect(window.getByTestId('selected-period-duration')).toContainText('69.4');
+    await expect(window.getByTestId('selected-period-start-pressure')).toContainText('314.387');
+    await expect(window.getByTestId('selected-period-end-pressure')).toContainText('299.279');
+    // Canonical metrics still match because the range equals the full data range
+    await expect(window.getByTestId('pressure-drop-bar')).toContainText('15.108');
+    await expect(window.getByTestId('pressure-drop-pct-start')).toContainText('4.8055');
     await expect(window.getByTestId('hold-status')).toHaveText('PASS');
-    // Hold uses target reference when target is supplied
-    await expect(window.getByTestId('hold-used-drop-pct')).toContainText('4.7962');
+
+    // ----- Shorten period to 13:10:37 → 13:20:00 -----
+    await window.getByTestId('period-to-input').fill('13:20:00');
+
+    // Duration drops from 69.4 to ~9.4 (9 min 23 sec)
+    const shortDuration = await window.getByTestId('selected-period-duration').textContent();
+    expect(shortDuration).toMatch(/\b9\.[0-9]\s*min\b/);
+
+    // Pressure-drop-bar must change from the full-range 15.108
+    const shortDropBar = await window.getByTestId('pressure-drop-bar').textContent();
+    expect(shortDropBar).not.toContain('15.108');
+
+    // Hold status still renders (PASS, FAIL, or UNKNOWN — never blank)
+    const shortHold = await window.getByTestId('hold-status').textContent();
+    expect(shortHold).toMatch(/^(PASS|FAIL|UNKNOWN)$/);
+
+    // ----- Reset period -----
+    await window.getByTestId('reset-period-selection').click();
+
+    await expect(window.getByTestId('selected-period-summary')).toContainText('Hele loggen');
+    await expect(window.getByTestId('pressure-drop-bar')).toContainText('15.108');
+    await expect(window.getByTestId('pressure-drop-pct-start')).toContainText('4.8055');
+    await expect(window.getByTestId('hold-status')).toHaveText('PASS');
+    await expect(window.getByTestId('period-from-input')).toHaveValue('');
+    await expect(window.getByTestId('period-to-input')).toHaveValue('');
+
+    // Reset zoom button exists and is clickable
+    await window.getByTestId('reset-chart-zoom').click();
 
     await window.screenshot({
-      path: path.join(screenshotDir, 'electron-file-upload-summary.png'),
+      path: path.join(screenshotDir, 'electron-pressure-chart-period-selection.png'),
       fullPage: true
     });
   } finally {

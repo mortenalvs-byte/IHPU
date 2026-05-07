@@ -26,6 +26,24 @@ export interface AppState {
   maxDropPct: number;
   /** targetPressure in bar; null when the user has not specified one. */
   targetPressure: number | null;
+  /**
+   * Operator-selected analysis range. Both null means "use the full parsed
+   * range" (default after upload). Applied to calculatePressureDrop /
+   * evaluateHoldPeriod, and visualised in the chart.
+   */
+  selectedFromTimestampMs: number | null;
+  selectedToTimestampMs: number | null;
+  /**
+   * Raw text the user typed in the period-from / period-to inputs. Kept
+   * separate from the timestamp values so partially-typed or invalid input
+   * doesn't trash the active range.
+   */
+  selectedFromTimeText: string;
+  selectedToTimeText: string;
+  /** True once a Chart.js instance has been mounted with data. */
+  chartReady: boolean;
+  /** Last chart-related error message (e.g. parse-time-text failure). Null when fine. */
+  chartError: string | null;
   /** PressureDropResult with reference = startPressure (always populated when rows exist). */
   baselineDrop: PressureDropResult | null;
   /** PressureDropResult with reference = targetPressure (only when targetPressure is set). */
@@ -46,6 +64,12 @@ export function createState(): AppState {
     selectedChannel: DEFAULT_CHANNEL,
     maxDropPct: DEFAULT_MAX_DROP_PCT,
     targetPressure: null,
+    selectedFromTimestampMs: null,
+    selectedToTimestampMs: null,
+    selectedFromTimeText: '',
+    selectedToTimeText: '',
+    chartReady: false,
+    chartError: null,
     baselineDrop: null,
     targetDrop: null,
     holdResult: null,

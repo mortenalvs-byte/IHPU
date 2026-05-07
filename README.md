@@ -128,6 +128,25 @@ cannot disagree on numbers.
 
 See [docs/development/ui-file-upload-summary.md](docs/development/ui-file-upload-summary.md).
 
+## Pressure chart + period selection
+
+The app now renders a Chart.js trykkforløp with both T1 and T2 datasets, and
+lets the operator pick the actual hold period from the log — either by
+typing Fra/Til times (`HH:MM` or `HH:MM:SS`) or by clicking and dragging
+horizontally inside the chart. Wheel/pinch zoom is supported; drag is
+reserved for period selection.
+
+For oil/gas trykktest work this is core, not polish: the whole-log drop %
+is meaningless because the ramp-up and depressurisation phases dominate it.
+The operator must be able to evaluate exactly the steady-state portion they
+care about.
+
+The selected range flows through to `calculatePressureDrop` and
+`evaluateHoldPeriod` via their existing `fromTimestampMs` / `toTimestampMs`
+options — no domain changes.
+
+See [docs/development/pressure-chart-period-selection.md](docs/development/pressure-chart-period-selection.md).
+
 ## Migration roadmap
 
 1. ~~Bootstrap structure~~ (done)
@@ -135,6 +154,6 @@ See [docs/development/ui-file-upload-summary.md](docs/development/ui-file-upload
 3. ~~Pure-TypeScript parser in `src/domain/ihpuParser.ts` + Vitest coverage against `test-data/Dekk test Seal T.2`~~ (done)
 4. ~~Pressure analysis + hold-period evaluation~~ (done)
 5. ~~File upload + summary UI~~ (done)
-6. Chart wiring (consumes `PressureDropResult` / `HoldPeriodResult`)
+6. ~~Chart + period selection~~ (done)
 7. CSV / PDF reports (must consume `HoldPeriodResult`, never re-derive numbers)
 8. UI polish, app icon, signed installer

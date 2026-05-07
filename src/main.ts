@@ -1,7 +1,8 @@
 import './styles/app.css';
-import { wireEvents } from './app/events';
+import { PressureChart } from './charts/pressureChart';
+import { handleChartPeriodSelected, wireEvents } from './app/events';
 import { mountAppShell, render } from './app/render';
-import { createState } from './app/state';
+import { createState, type AppState } from './app/state';
 
 // Smoke-test source markers — these literal strings must remain in src/main.ts
 // so scripts/smoke-web.mjs (which probes the dev-transformed module) and
@@ -13,6 +14,12 @@ const APP_SHELL_MARKERS = {
   fileStatusInitial: 'Ingen data lastet'
 } as const;
 
+interface AppContext {
+  root: HTMLElement;
+  state: AppState;
+  chart: PressureChart;
+}
+
 const root = document.querySelector<HTMLDivElement>('#app');
 if (!root) {
   throw new Error('Missing #app root element');
@@ -20,5 +27,22 @@ if (!root) {
 
 const state = createState();
 mountAppShell(root, APP_SHELL_MARKERS);
-wireEvents({ root, state });
+
+const canvas = root.querySelector<HTMLCanvasElement>('[data-testid="pressure-chart"]');
+if (!canvas) {
+  throw new Error('Missing pressure-chart canvas');
+}
+
+// `ctx` is forward-declared because the chart callback needs to capture it,
+// but the chart instance itself is part of the context. The callback only
+// fires on user gestures — by then the assignment below has run.
+let ctx!: AppContext;
+
+const chart = new PressureChart(canvas, {
+  onPeriodSelected: (range) => handleChartPeriodSelected(ctx, range)
+});
+
+ctx = { root, state, chart };
+
+wireEvents(ctx);
 render(root, state);
