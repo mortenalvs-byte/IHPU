@@ -63,11 +63,33 @@ edit the file in place; replacing it requires a deliberate fixture-contract PR.
 `Start IHPU.bat` and the packaged Windows installer still need manual desktop testing
 before any release — the harness covers ~80% of the app surface, not the OS shell.
 
+## Parser contract
+
+`src/domain/ihpuParser.ts` is the canonical entry point for turning raw IHPU
+trykktest log text into a structured `ParseResult` (rows, issues, warnings,
+errors, meta). Pure TypeScript, no DOM/Electron/Chart.js — runs in the
+renderer, in tests, and (later) in the report exporters from the same source.
+
+The canonical fixture `test-data/Dekk test Seal T.2` is parsed end-to-end as
+part of `npm test`: 461 rows, 0 errors, both T1 and T2 channels present,
+duration ≈ 69.4 minutes. Negative pressure values are preserved as raw data —
+threshold logic (hold-zone detection, pass/fail) belongs to downstream modules.
+
+See [docs/development/parser-contract.md](docs/development/parser-contract.md)
+for the full input format, issue model, sorting rules, and timestamp
+determinism notes.
+
+```bash
+npm test          # runs the parser tests against the canonical fixture
+npm run verify    # full chain: build + test + fixture + web/prod/electron smoke
+```
+
 ## Migration roadmap
 
 1. ~~Bootstrap structure~~ (done)
-2. Pure-TypeScript parser in `src/domain/ihpuParser.ts` (no DOM) + Vitest coverage against `test-data/Dekk test Seal T.2`
-3. Pressure analysis + hold-period detection
-4. Chart wiring
-5. CSV / PDF reports
-6. UI polish, app icon, signed installer
+2. ~~Preview / smoke / fixture integrity harness~~ (done)
+3. ~~Pure-TypeScript parser in `src/domain/ihpuParser.ts` + Vitest coverage against `test-data/Dekk test Seal T.2`~~ (done)
+4. Pressure analysis + hold-period detection
+5. Chart wiring
+6. CSV / PDF reports
+7. UI polish, app icon, signed installer
