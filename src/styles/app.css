@@ -208,3 +208,83 @@ html, body {
   font-size: 0.9rem;
   white-space: pre-wrap;
 }
+
+.chart-section .chart-container {
+  position: relative;
+  height: 360px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5rem;
+}
+
+.chart-section canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.chart-hint {
+  margin: 0.5rem 0 0;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.chart-status {
+  margin: 0.25rem 0 0.75rem;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.period-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.6rem;
+  align-items: end;
+  margin-bottom: 0.75rem;
+}
+
+.period-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.period-controls input {
+  padding: 0.45rem 0.6rem;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.95rem;
+}
+
+.period-controls input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.period-controls button {
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.85rem;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+.period-controls button:hover {
+  background: rgba(65, 216, 255, 0.08);
+}
+
+.period-controls button:active {
+  background: rgba(65, 216, 255, 0.16);
+}

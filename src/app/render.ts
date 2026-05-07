@@ -86,6 +86,35 @@ export function mountAppShell(root: HTMLElement, markers: AppShellMarkers): void
         </dl>
       </section>
 
+      <section class="card chart-section">
+        <h2>Trykkforløp</h2>
+        <div class="chart-container">
+          <canvas data-testid="pressure-chart" aria-label="Pressure log chart"></canvas>
+        </div>
+        <p class="chart-hint" data-testid="chart-drag-hint">Klikk og dra horisontalt i grafen for å velge trykktestperiode.</p>
+        <p class="chart-status" data-testid="chart-status">Venter på data</p>
+
+        <div class="period-controls">
+          <label>
+            <span>Fra (HH:MM:SS)</span>
+            <input type="text" data-testid="period-from-input" placeholder="13:10:37" autocomplete="off" />
+          </label>
+          <label>
+            <span>Til (HH:MM:SS)</span>
+            <input type="text" data-testid="period-to-input" placeholder="14:20:01" autocomplete="off" />
+          </label>
+          <button type="button" data-testid="reset-period-selection">Tilbakestill periode</button>
+          <button type="button" data-testid="reset-chart-zoom">Tilbakestill zoom</button>
+        </div>
+
+        <dl class="summary-grid">
+          <dt>Valgt periode</dt>           <dd data-testid="selected-period-summary">Hele loggen</dd>
+          <dt>Periode-varighet</dt>        <dd data-testid="selected-period-duration">—</dd>
+          <dt>Periode starttrykk</dt>      <dd data-testid="selected-period-start-pressure">—</dd>
+          <dt>Periode slutttrykk</dt>      <dd data-testid="selected-period-end-pressure">—</dd>
+        </dl>
+      </section>
+
       <section class="card hold-section">
         <h2>Holdperiode-resultat</h2>
         <p class="hold-status hold-unknown" data-testid="hold-status">—</p>
@@ -146,6 +175,15 @@ export function render(root: HTMLElement, state: AppState): void {
     'pressure-increased',
     drop?.dropBar === null || drop?.dropBar === undefined ? '—' : drop.dropBar < 0 ? 'Ja' : 'Nei'
   );
+
+  // Chart + period selection
+  setText(root, 'chart-status', resolveChartStatus(state));
+  setText(root, 'selected-period-summary', resolvePeriodSummary(state));
+  setText(root, 'selected-period-duration', fmtDuration(drop?.durationMinutes ?? null));
+  setText(root, 'selected-period-start-pressure', fmtPressure(drop?.startPressure ?? null));
+  setText(root, 'selected-period-end-pressure', fmtPressure(drop?.endPressure ?? null));
+
+  syncPeriodInputs(root, state);
 
   // Hold result
   const hold = state.holdResult;
@@ -209,6 +247,7 @@ function setHoldStatusClass(root: HTMLElement, status: string | null): void {
 function composeIssueSummary(state: AppState): string {
   const messages: string[] = [];
   if (state.userMessage) messages.push(state.userMessage.text);
+  if (state.chartError) messages.push(`Chart: ${state.chartError}`);
   const pr = state.parseResult;
   if (pr) {
     if (pr.errors.length > 0) {
@@ -224,6 +263,61 @@ function composeIssueSummary(state: AppState): string {
   }
   return messages.length === 0 ? 'Ingen meldinger' : messages.join(' · ');
 }
+
+function resolveChartStatus(state: AppState): string {
+  if (state.chartError) return state.chartError;
+  if (state.chartReady) return 'Klar';
+  if (state.parseResult && state.parseResult.rows.length > 0) return 'Tegner …';
+  return 'Venter på data';
+}
+
+function resolvePeriodSummary(state: AppState): string {
+  const fromMs = state.selectedFromTimestampMs;
+  const toMs = state.selectedToTimestampMs;
+  const pr = state.parseResult;
+
+  if (fromMs === null && toMs === null) {
+    if (pr && pr.rows.length > 0) {
+      const first = pr.rows[0].timeText || pr.rows[0].localIso.slice(11);
+      const last =
+        pr.rows[pr.rows.length - 1].timeText || pr.rows[pr.rows.length - 1].localIso.slice(11);
+      return `Hele loggen (${first} → ${last})`;
+    }
+    return 'Hele loggen';
+  }
+
+  const fromText = fromMs !== null ? msToTimeText(fromMs) : 'start';
+  const toText = toMs !== null ? msToTimeText(toMs) : 'slutt';
+  return `${fromText} → ${toText}`;
+}
+
+function syncPeriodInputs(root: HTMLElement, state: AppState): void {
+  const fromInput = root.querySelector<HTMLInputElement>('[data-testid="period-from-input"]');
+  const toInput = root.querySelector<HTMLInputElement>('[data-testid="period-to-input"]');
+  if (fromInput && fromInput.value !== state.selectedFromTimeText) {
+    // Only update if the user is not currently typing in this field.
+    if (document.activeElement !== fromInput) {
+      fromInput.value = state.selectedFromTimeText;
+    }
+  }
+  if (toInput && toInput.value !== state.selectedToTimeText) {
+    if (document.activeElement !== toInput) {
+      toInput.value = state.selectedToTimeText;
+    }
+  }
+}
+
+function msToTimeText(ms: number): string {
+  // The deterministic timestampMs is built with Date.UTC, so reading via UTC
+  // round-trips the wall-clock time the parser saw.
+  const d = new Date(ms);
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  const ss = String(d.getUTCSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+export { msToTimeText };
 
 /**
  * Defensive escape for the static template. Even though the only inputs come
