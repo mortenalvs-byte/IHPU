@@ -147,6 +147,21 @@ options — no domain changes.
 
 See [docs/development/pressure-chart-period-selection.md](docs/development/pressure-chart-period-selection.md).
 
+## Report export
+
+The Kunderapport section lets the operator fill in customer / project / location
+/ test-date / IHPU-serial / ROV-system / operator / comment, then export the
+result as either a CSV (machine-readable raw rows + summary) or a PDF
+(human-readable customer report with PASS / FAIL / UNKNOWN badge). Both
+artifacts read from the same `ReportModel` produced by `buildReportModel`,
+so the dashboard, the CSV, and the PDF cannot disagree on numbers.
+
+CSV uses CRLF line endings and period decimal separator (machine-readable).
+PDF is text-only A4 with a prominent result badge — the chart image is
+intentionally deferred to a follow-up PR.
+
+See [docs/development/report-export-foundation.md](docs/development/report-export-foundation.md).
+
 ## Migration roadmap
 
 1. ~~Bootstrap structure~~ (done)
@@ -155,5 +170,8 @@ See [docs/development/pressure-chart-period-selection.md](docs/development/press
 4. ~~Pressure analysis + hold-period evaluation~~ (done)
 5. ~~File upload + summary UI~~ (done)
 6. ~~Chart + period selection~~ (done)
-7. CSV / PDF reports (must consume `HoldPeriodResult`, never re-derive numbers)
-8. UI polish, app icon, signed installer
+7. ~~CSV / PDF report export foundation~~ (done)
+8. Manual data entry + validation
+9. Multi-file overlay / comparison
+10. Windows installer + ICO + code-sign + release packaging
+11. Final UI polish + operator QA checklist

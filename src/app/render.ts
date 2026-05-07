@@ -125,6 +125,59 @@ export function mountAppShell(root: HTMLElement, markers: AppShellMarkers): void
         </dl>
       </section>
 
+      <section class="card report-section" data-testid="report-section">
+        <h2>Kunderapport</h2>
+
+        <div class="report-form">
+          <label>
+            <span>Kundenavn</span>
+            <input type="text" data-testid="report-customer-input" autocomplete="off" />
+          </label>
+          <label>
+            <span>Prosjektnummer</span>
+            <input type="text" data-testid="report-project-input" autocomplete="off" />
+          </label>
+          <label>
+            <span>Lokasjon</span>
+            <input type="text" data-testid="report-location-input" autocomplete="off" />
+          </label>
+          <label>
+            <span>Test-dato</span>
+            <input type="text" data-testid="report-test-date-input" placeholder="DD.MM.YYYY" autocomplete="off" />
+          </label>
+          <label>
+            <span>IHPU serienummer</span>
+            <input type="text" data-testid="report-ihpu-serial-input" autocomplete="off" />
+          </label>
+          <label>
+            <span>ROV-system</span>
+            <input type="text" data-testid="report-rov-system-input" autocomplete="off" />
+          </label>
+          <label>
+            <span>Operatør</span>
+            <input type="text" data-testid="report-operator-input" autocomplete="off" />
+          </label>
+          <label class="report-form-comment">
+            <span>Kommentar / merknad</span>
+            <textarea data-testid="report-comment-input" rows="3"></textarea>
+          </label>
+        </div>
+
+        <dl class="summary-grid report-preview-grid">
+          <dt>Status for eksport</dt>     <dd data-testid="report-preview-status">Ingen data lastet</dd>
+          <dt>Resultat</dt>               <dd data-testid="report-result-status">—</dd>
+          <dt>Valgt periode</dt>          <dd data-testid="report-selected-period">—</dd>
+          <dt>Kanal</dt>                  <dd data-testid="report-channel">—</dd>
+          <dt>Drop-sammendrag</dt>        <dd data-testid="report-drop-summary">—</dd>
+        </dl>
+
+        <div class="export-actions">
+          <button type="button" data-testid="export-csv-button" disabled>Eksporter CSV</button>
+          <button type="button" data-testid="export-pdf-button" disabled>Eksporter PDF</button>
+        </div>
+        <p class="export-status" data-testid="export-status">Ingen eksport ennå</p>
+      </section>
+
       <section class="card issues-section">
         <h2>Meldinger</h2>
         <p data-testid="issue-summary">Ingen meldinger</p>
@@ -199,8 +252,80 @@ export function render(root: HTMLElement, state: AppState): void {
 
   setHoldStatusClass(root, hold?.status ?? null);
 
+  // Report section + export buttons
+  renderReportSection(root, state);
+
   // Issues
   setText(root, 'issue-summary', composeIssueSummary(state));
+}
+
+function renderReportSection(root: HTMLElement, state: AppState): void {
+  // Sync metadata inputs (don't trample on a field the user is currently editing).
+  syncMetadataInputs(root, state);
+
+  // Preview / status fields
+  const ready =
+    state.parseResult !== null &&
+    state.parseResult.rows.length > 0 &&
+    state.baselineDrop !== null &&
+    state.holdResult !== null;
+  setText(root, 'report-preview-status', ready ? 'Klar for eksport' : 'Ingen data lastet');
+  setText(root, 'report-result-status', state.holdResult?.status ?? '—');
+  setText(root, 'report-selected-period', resolvePeriodSummary(state));
+  setText(
+    root,
+    'report-channel',
+    state.parseResult ? state.selectedChannel.toUpperCase() : '—'
+  );
+  setText(root, 'report-drop-summary', composeDropSummary(state));
+
+  // Toggle export buttons
+  const csvBtn = root.querySelector<HTMLButtonElement>('[data-testid="export-csv-button"]');
+  const pdfBtn = root.querySelector<HTMLButtonElement>('[data-testid="export-pdf-button"]');
+  if (csvBtn) csvBtn.disabled = !ready;
+  if (pdfBtn) pdfBtn.disabled = !ready;
+
+  // Export status message
+  const exp = state.exportStatus;
+  setText(root, 'export-status', exp.message || (exp.kind === 'idle' ? 'Ingen eksport ennå' : ''));
+  const statusEl = root.querySelector<HTMLElement>('[data-testid="export-status"]');
+  if (statusEl) {
+    statusEl.classList.remove('export-success', 'export-error', 'export-idle');
+    if (exp.kind === 'success') statusEl.classList.add('export-success');
+    else if (exp.kind === 'error') statusEl.classList.add('export-error');
+    else statusEl.classList.add('export-idle');
+  }
+}
+
+function syncMetadataInputs(root: HTMLElement, state: AppState): void {
+  const map: Array<[string, keyof AppState['reportMetadata']]> = [
+    ['report-customer-input', 'customerName'],
+    ['report-project-input', 'projectNumber'],
+    ['report-location-input', 'location'],
+    ['report-test-date-input', 'testDate'],
+    ['report-ihpu-serial-input', 'ihpuSerial'],
+    ['report-rov-system-input', 'rovSystem'],
+    ['report-operator-input', 'operatorName'],
+    ['report-comment-input', 'comment']
+  ];
+  for (const [testId, key] of map) {
+    const el = root.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+      `[data-testid="${testId}"]`
+    );
+    if (!el) continue;
+    const desired = state.reportMetadata[key];
+    if (el.value !== desired && document.activeElement !== el) {
+      el.value = desired;
+    }
+  }
+}
+
+function composeDropSummary(state: AppState): string {
+  const drop = state.baselineDrop;
+  if (!drop || drop.dropBar === null || drop.dropPct === null) return '—';
+  const dropBar = drop.dropBar.toFixed(3);
+  const dropPct = drop.dropPct.toFixed(4);
+  return `${dropBar} bar (${dropPct} %)`;
 }
 
 // ---------- helpers ----------

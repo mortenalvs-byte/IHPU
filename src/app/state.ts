@@ -4,6 +4,7 @@
 // render.ts reads from state and pushes textContent into the DOM. No reducers,
 // no observables, no framework — for a small Electron app this is enough.
 
+import { createDefaultMetadata, type ReportMetadata } from '../reports/reportTypes';
 import type {
   HoldPeriodResult,
   ParseResult,
@@ -52,6 +53,17 @@ export interface AppState {
   holdResult: HoldPeriodResult | null;
   /** Last user-facing message (file read failure, etc.). Cleared on next file load. */
   userMessage: AppMessage | null;
+  /** Editable report metadata (customer/project/operator/comment/etc.). Empty strings by default. */
+  reportMetadata: ReportMetadata;
+  /** Export attempt status, surfaced in the UI's `export-status` field. */
+  exportStatus: ExportStatus;
+}
+
+export type ExportStatusKind = 'idle' | 'success' | 'error';
+
+export interface ExportStatus {
+  kind: ExportStatusKind;
+  message: string;
 }
 
 export const DEFAULT_CHANNEL: PressureChannel = 'p2';
@@ -73,6 +85,8 @@ export function createState(): AppState {
     baselineDrop: null,
     targetDrop: null,
     holdResult: null,
-    userMessage: null
+    userMessage: null,
+    reportMetadata: createDefaultMetadata(),
+    exportStatus: { kind: 'idle', message: '' }
   };
 }

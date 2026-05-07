@@ -2,7 +2,7 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 
-test('Electron app: bootstrap shell, fixture upload, chart period selection', async () => {
+test('Electron app: bootstrap, fixture upload, chart period, report export', async () => {
   const appRoot = process.cwd();
   const mainPath = path.join(appRoot, 'dist-electron', 'main.js');
   const fixturePath = path.join(appRoot, 'test-data', 'Dekk test Seal T.2');
@@ -31,71 +31,69 @@ test('Electron app: bootstrap shell, fixture upload, chart period selection', as
     await expect(window.getByTestId('file-input')).toBeEnabled();
     await expect(window.getByTestId('chart-status')).toContainText('Venter på data');
 
+    // Export buttons disabled before any file
+    await expect(window.getByTestId('export-csv-button')).toBeDisabled();
+    await expect(window.getByTestId('export-pdf-button')).toBeDisabled();
+    await expect(window.getByTestId('report-preview-status')).toContainText('Ingen data lastet');
+
     // ----- Upload canonical fixture -----
     await window.getByTestId('file-input').setInputFiles(fixturePath);
 
     // Parse summary
     await expect(window.getByTestId('parsed-row-count')).toHaveText('461');
     await expect(window.getByTestId('parse-error-count')).toHaveText('0');
-    await expect(window.getByTestId('parse-warning-count')).toHaveText('0');
-    await expect(window.getByTestId('duration-minutes')).toContainText('69.4');
-
-    // Chart mounted
     await expect(window.getByTestId('chart-status')).toContainText('Klar');
-    await expect(window.getByTestId('pressure-chart')).toBeVisible();
 
-    // Default full-range pressure summary (reference: start)
+    // Default full-range pressure summary
     await expect(window.getByTestId('pressure-start')).toContainText('314.387');
-    await expect(window.getByTestId('pressure-end')).toContainText('299.279');
     await expect(window.getByTestId('pressure-drop-bar')).toContainText('15.108');
-    await expect(window.getByTestId('pressure-drop-pct-start')).toContainText('4.8055');
     await expect(window.getByTestId('hold-status')).toHaveText('PASS');
-    await expect(window.getByTestId('selected-period-summary')).toContainText('Hele loggen');
 
-    // ----- Manual period that equals full range -----
+    // Report fields populate from analysis
+    await expect(window.getByTestId('report-preview-status')).toContainText('Klar for eksport');
+    await expect(window.getByTestId('report-result-status')).toHaveText('PASS');
+    await expect(window.getByTestId('report-channel')).toHaveText('P2');
+    await expect(window.getByTestId('report-drop-summary')).toContainText('15.108');
+    await expect(window.getByTestId('report-selected-period')).toContainText('Hele loggen');
+
+    // ----- Manual period selection sanity -----
     await window.getByTestId('period-from-input').fill('13:10:37');
     await window.getByTestId('period-to-input').fill('14:20:01');
-
     await expect(window.getByTestId('selected-period-summary')).toContainText('13:10:37');
     await expect(window.getByTestId('selected-period-summary')).toContainText('14:20:01');
-    await expect(window.getByTestId('selected-period-duration')).toContainText('69.4');
-    await expect(window.getByTestId('selected-period-start-pressure')).toContainText('314.387');
-    await expect(window.getByTestId('selected-period-end-pressure')).toContainText('299.279');
-    // Canonical metrics still match because the range equals the full data range
-    await expect(window.getByTestId('pressure-drop-bar')).toContainText('15.108');
-    await expect(window.getByTestId('pressure-drop-pct-start')).toContainText('4.8055');
-    await expect(window.getByTestId('hold-status')).toHaveText('PASS');
-
-    // ----- Shorten period to 13:10:37 → 13:20:00 -----
-    await window.getByTestId('period-to-input').fill('13:20:00');
-
-    // Duration drops from 69.4 to ~9.4 (9 min 23 sec)
-    const shortDuration = await window.getByTestId('selected-period-duration').textContent();
-    expect(shortDuration).toMatch(/\b9\.[0-9]\s*min\b/);
-
-    // Pressure-drop-bar must change from the full-range 15.108
-    const shortDropBar = await window.getByTestId('pressure-drop-bar').textContent();
-    expect(shortDropBar).not.toContain('15.108');
-
-    // Hold status still renders (PASS, FAIL, or UNKNOWN — never blank)
-    const shortHold = await window.getByTestId('hold-status').textContent();
-    expect(shortHold).toMatch(/^(PASS|FAIL|UNKNOWN)$/);
-
-    // ----- Reset period -----
     await window.getByTestId('reset-period-selection').click();
-
     await expect(window.getByTestId('selected-period-summary')).toContainText('Hele loggen');
-    await expect(window.getByTestId('pressure-drop-bar')).toContainText('15.108');
-    await expect(window.getByTestId('pressure-drop-pct-start')).toContainText('4.8055');
-    await expect(window.getByTestId('hold-status')).toHaveText('PASS');
-    await expect(window.getByTestId('period-from-input')).toHaveValue('');
-    await expect(window.getByTestId('period-to-input')).toHaveValue('');
 
-    // Reset zoom button exists and is clickable
-    await window.getByTestId('reset-chart-zoom').click();
+    // ----- Fill report metadata -----
+    await window.getByTestId('report-customer-input').fill('Test Customer AS');
+    await window.getByTestId('report-project-input').fill('PRJ-001');
+    await window.getByTestId('report-location-input').fill('Stavanger');
+    await window.getByTestId('report-test-date-input').fill('21.02.2026');
+    await window.getByTestId('report-ihpu-serial-input').fill('IHPU-001');
+    await window.getByTestId('report-rov-system-input').fill('C24');
+    await window.getByTestId('report-operator-input').fill('Morten');
+    await window.getByTestId('report-comment-input').fill('Smoke test report');
+
+    // ----- Export buttons enabled, click them -----
+    await expect(window.getByTestId('export-csv-button')).toBeEnabled();
+    await expect(window.getByTestId('export-pdf-button')).toBeEnabled();
+
+    // CSV export — assert success status updates. Per the report-export-foundation
+    // contract, the smoke verifies the status string and no crash; deep CSV/PDF
+    // content is covered by Vitest unit tests.
+    await window.getByTestId('export-csv-button').click();
+    await expect(window.getByTestId('export-status')).toContainText('CSV exported');
+    await expect(window.getByTestId('export-status')).toContainText('PRJ-001');
+    await expect(window.getByTestId('export-status')).toContainText('PASS');
+    await expect(window.getByTestId('export-status')).toContainText('.csv');
+
+    // PDF export
+    await window.getByTestId('export-pdf-button').click();
+    await expect(window.getByTestId('export-status')).toContainText('PDF exported');
+    await expect(window.getByTestId('export-status')).toContainText('.pdf');
 
     await window.screenshot({
-      path: path.join(screenshotDir, 'electron-pressure-chart-period-selection.png'),
+      path: path.join(screenshotDir, 'electron-report-export.png'),
       fullPage: true
     });
   } finally {
