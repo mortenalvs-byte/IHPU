@@ -84,12 +84,32 @@ npm test          # runs the parser tests against the canonical fixture
 npm run verify    # full chain: build + test + fixture + web/prod/electron smoke
 ```
 
+## Pressure analysis & hold-period
+
+`src/domain/pressureAnalysis.ts` and `src/domain/holdPeriod.ts` extend the
+parser with pure numeric reasoning: pressure-drop calculation
+(`calculatePressureDrop`), time-range filtering (`selectRowsInTimeRange`), and
+PASS / FAIL / UNKNOWN evaluation against a `HoldPeriodCriteria`
+(`evaluateHoldPeriod`). All consume `PressureRow[]` from the parser; none of
+them touch the DOM, Chart.js, jsPDF, or CSV.
+
+`dropPct` uses `Math.abs(reference)` so the sign of `dropPct` follows the sign
+of `dropBar` — important for channels like T1 in the canonical fixture where
+all values are negative.
+
+Canonical-fixture expectations (encoded as Vitest assertions): T2 over the
+full fixture drops 15.107940 bar (≈ 4.81 %) in 69.4 min; T1 *increases*
+0.913717 bar over the same period (negative drop, automatically PASS for any
+positive threshold).
+
+See [docs/development/pressure-analysis-contract.md](docs/development/pressure-analysis-contract.md).
+
 ## Migration roadmap
 
 1. ~~Bootstrap structure~~ (done)
 2. ~~Preview / smoke / fixture integrity harness~~ (done)
 3. ~~Pure-TypeScript parser in `src/domain/ihpuParser.ts` + Vitest coverage against `test-data/Dekk test Seal T.2`~~ (done)
-4. Pressure analysis + hold-period detection
+4. ~~Pressure analysis + hold-period evaluation~~ (done)
 5. Chart wiring
-6. CSV / PDF reports
+6. CSV / PDF reports (must consume `HoldPeriodResult`, never re-derive numbers)
 7. UI polish, app icon, signed installer
