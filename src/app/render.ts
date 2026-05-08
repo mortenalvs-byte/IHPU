@@ -5,6 +5,8 @@
 // (e.g. a malicious filename). The static layout HTML in `mountAppShell` is
 // developer-authored and contains no user data, so innerHTML is safe there.
 
+import { computeOverlayComparison } from '../domain/overlay';
+import type { HoldPeriodCriteria } from '../domain/types';
 import type { AppState } from './state';
 
 export interface AppShellMarkers {
@@ -201,6 +203,48 @@ export function mountAppShell(root: HTMLElement, markers: AppShellMarkers): void
         </dl>
       </section>
 
+      <section class="card overlay-section" data-testid="overlay-section">
+        <h2>Sammenlign tester</h2>
+        <p class="overlay-intro">Last opp ekstra trykktest-logger for sammenligning. Påvirker ikke aktiv analyse.</p>
+
+        <div class="overlay-actions">
+          <label class="overlay-upload">
+            <span>Legg til fil(er) i sammenligning</span>
+            <input
+              type="file"
+              multiple
+              data-testid="overlay-file-input"
+              accept=".txt,.csv,.dat,.tsv,.log"
+            />
+          </label>
+          <button type="button" data-testid="overlay-clear-button">Tøm sammenligning</button>
+        </div>
+
+        <p class="overlay-status" data-testid="overlay-status">Ingen sammenligningsfiler lastet ennå.</p>
+        <p class="overlay-summary" data-testid="overlay-summary">0 filer i sammenligning</p>
+
+        <div class="overlay-table-wrapper">
+          <table class="overlay-table" data-testid="overlay-table">
+            <thead>
+              <tr>
+                <th>Filnavn</th>
+                <th>Rader</th>
+                <th>Varighet</th>
+                <th>T2 start</th>
+                <th>T2 slutt</th>
+                <th>T2 drop bar</th>
+                <th>T2 drop %</th>
+                <th>T2 verdikt</th>
+                <th>T1 verdikt</th>
+                <th>Lagt til</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="card report-section" data-testid="report-section">
         <h2>Kunderapport</h2>
 
@@ -335,11 +379,118 @@ export function render(root: HTMLElement, state: AppState): void {
   // Manual entry section (radios + table + validation summary)
   renderManualSection(root, state);
 
+  // Multi-file comparison section (separate from primary analysis)
+  renderOverlaySection(root, state);
+
   // Session section (autosave + restore + new/import/export status)
   renderSessionSection(root, state);
 
   // Issues
   setText(root, 'issue-summary', composeIssueSummary(state));
+}
+
+function renderOverlaySection(root: HTMLElement, state: AppState): void {
+  setText(root, 'overlay-status', state.overlay.addStatus.message);
+
+  const criteria: HoldPeriodCriteria = {
+    targetPressure:
+      state.targetPressure !== null && Number.isFinite(state.targetPressure)
+        ? state.targetPressure
+        : undefined,
+    maxDropPct: state.maxDropPct
+  };
+  const comparison = computeOverlayComparison(state.overlay.entries, criteria);
+
+  setText(root, 'overlay-summary', composeOverlaySummary(comparison.entryCount, comparison));
+
+  const table = root.querySelector<HTMLTableElement>('[data-testid="overlay-table"]');
+  const tbody = table?.querySelector('tbody');
+  if (!tbody) return;
+  while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+  comparison.entries.forEach((vm) => {
+    const tr = document.createElement('tr');
+    tr.dataset.entryId = vm.id;
+    tr.setAttribute('data-testid', 'overlay-row');
+
+    appendCell(tr, vm.filename);
+    appendCell(tr, String(vm.rowCount));
+    appendCell(tr, fmtDuration(vm.durationMinutes));
+    appendCell(tr, vm.p2 ? fmtPressure(vm.p2.startBar) : '—');
+    appendCell(tr, vm.p2 ? fmtPressure(vm.p2.endBar) : '—');
+    appendCell(tr, vm.p2 ? fmtPressure(vm.p2.dropBar) : '—');
+
+    // T2 drop % cell with optional best/worst marker.
+    const dropPctCell = document.createElement('td');
+    if (vm.p2) {
+      dropPctCell.textContent = fmtPercent(vm.p2.dropPct);
+    } else {
+      dropPctCell.textContent = '—';
+    }
+    if (vm.isBestT2DropPct) {
+      dropPctCell.classList.add('overlay-best');
+      dropPctCell.setAttribute('data-testid', 'overlay-best-cell');
+      dropPctCell.setAttribute('aria-label', 'Lavest T2 drop % i sammenligningen');
+    } else if (vm.isWorstT2DropPct) {
+      dropPctCell.classList.add('overlay-worst');
+      dropPctCell.setAttribute('data-testid', 'overlay-worst-cell');
+      dropPctCell.setAttribute('aria-label', 'Høyest T2 drop % i sammenligningen');
+    }
+    tr.appendChild(dropPctCell);
+
+    appendCell(tr, vm.p2 ? vm.p2.verdict : '—');
+    appendCell(tr, vm.p1 ? vm.p1.verdict : '—');
+    appendCell(tr, formatAddedAt(vm.addedAtMs));
+
+    const actCell = document.createElement('td');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('data-testid', 'overlay-remove-row');
+    btn.dataset.entryId = vm.id;
+    btn.textContent = 'Fjern';
+    btn.setAttribute('aria-label', `Fjern ${vm.filename} fra sammenligning`);
+    actCell.appendChild(btn);
+    tr.appendChild(actCell);
+
+    tbody.appendChild(tr);
+  });
+}
+
+function composeOverlaySummary(
+  count: number,
+  comparison: ReturnType<typeof computeOverlayComparison>
+): string {
+  const noun = count === 1 ? 'fil' : 'filer';
+  if (count === 0) return `0 ${noun} i sammenligning`;
+  const parts = [`${count} ${noun} i sammenligning`];
+  if (comparison.bestT2DropPctEntryId !== null) {
+    const best = comparison.entries.find(
+      (e) => e.id === comparison.bestT2DropPctEntryId
+    );
+    if (best?.p2 && best.p2.dropPct !== null) {
+      parts.push(`best T2 drop %: ${best.p2.dropPct.toFixed(4)} (${best.filename})`);
+    }
+  }
+  if (comparison.worstT2DropPctEntryId !== null) {
+    const worst = comparison.entries.find(
+      (e) => e.id === comparison.worstT2DropPctEntryId
+    );
+    if (worst?.p2 && worst.p2.dropPct !== null) {
+      parts.push(`verst T2 drop %: ${worst.p2.dropPct.toFixed(4)} (${worst.filename})`);
+    }
+  }
+  if (comparison.incomparableCount > 0) {
+    parts.push(`${comparison.incomparableCount} uten T2`);
+  }
+  return parts.join(' · ');
+}
+
+function formatAddedAt(ms: number): string {
+  const d = new Date(ms);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
 }
 
 function renderSessionSection(root: HTMLElement, state: AppState): void {

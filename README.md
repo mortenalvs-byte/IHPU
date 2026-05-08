@@ -176,6 +176,28 @@ operator can switch back and forth without re-uploading or re-typing.
 
 See [docs/development/manual-entry-and-validation.md](docs/development/manual-entry-and-validation.md).
 
+## Multi-file comparison
+
+Operators can upload additional trykktest logs into a "Sammenlign
+tester" card and inspect them side-by-side against the primary
+analysis. Comparison entries reuse the canonical pipeline
+(`parseIhpuPressureLog → calculatePressureDrop → evaluateHoldPeriod`)
+— there is no parallel parser or analysis path, so the comparison
+table cannot disagree numerically with the primary dashboard.
+
+The overlay set is **additive**: removing or clearing comparison
+entries cannot affect the primary `parseResult` / `baselineDrop` /
+`holdResult`. Each entry is re-evaluated against the operator's
+current `maxDropPct` / `targetPressure`, so tightening criteria in
+the main controls instantly updates the comparison verdicts.
+
+Best / worst T2 drop % are flagged in the table. Chart-overlay,
+session-JSON persistence of comparison entries, and overlay export
+in CSV/PDF are deliberately out of scope for this foundation — they
+land in follow-up PRs.
+
+See [docs/development/multi-file-comparison-foundation.md](docs/development/multi-file-comparison-foundation.md).
+
 ## Test session workflow
 
 The "Test-økt" card at the top of the app autosaves the operator's working
@@ -203,7 +225,7 @@ See [docs/development/test-session-workflow-and-persistence.md](docs/development
 7. ~~CSV / PDF report export foundation~~ (done)
 8. ~~Manual data entry + validation~~ (done)
 9. ~~Test-session workflow + project persistence~~ (done)
-10. Multi-file overlay / comparison
+10. ~~Multi-file comparison foundation~~ (done)
 11. Report polish + chart image in PDF
 12. Windows installer + ICO + code-sign + release packaging
 13. Final UI polish + operator QA checklist

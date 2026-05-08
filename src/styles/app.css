@@ -616,3 +616,127 @@ html, body {
 .session-dirty-indicator {
   color: var(--muted);
 }
+
+.overlay-section .overlay-intro {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+}
+
+.overlay-section .overlay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+  margin-bottom: 0.6rem;
+}
+
+.overlay-section .overlay-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+}
+
+.overlay-section .overlay-upload input[type='file'] {
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.4rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  min-width: 240px;
+}
+
+.overlay-section button {
+  padding: 0.5rem 0.85rem;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.85rem;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+.overlay-section button:hover {
+  background: rgba(65, 216, 255, 0.08);
+}
+
+.overlay-status,
+.overlay-summary {
+  margin: 0.15rem 0;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.overlay-summary {
+  color: var(--accent);
+}
+
+.overlay-table-wrapper {
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-top: 0.5rem;
+}
+
+.overlay-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.82rem;
+}
+
+.overlay-table thead {
+  background: rgba(255, 255, 255, 0.03);
+  position: sticky;
+  top: 0;
+}
+
+.overlay-table th,
+.overlay-table td {
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.overlay-table th {
+  color: var(--muted);
+  font-weight: normal;
+}
+
+.overlay-table td.overlay-best {
+  color: var(--pass);
+  font-weight: bold;
+}
+
+.overlay-table td.overlay-worst {
+  color: var(--fail);
+  font-weight: bold;
+}
+
+.overlay-table button {
+  padding: 0.2rem 0.55rem;
+  background: transparent;
+  color: var(--fail);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.overlay-table button:hover {
+  background: rgba(255, 107, 107, 0.08);
+  border-color: var(--fail);
+}

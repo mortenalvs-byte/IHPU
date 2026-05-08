@@ -166,6 +166,82 @@ test.describe('Electron app smoke', () => {
     }
   });
 
+  test('overlay flow: load comparison file, primary unchanged, remove + clear', async () => {
+    const appRoot = process.cwd();
+    const mainPath = path.join(appRoot, 'dist-electron', 'main.js');
+    const fixturePath = path.join(appRoot, 'test-data', 'Dekk test Seal T.2');
+    const screenshotDir = path.join(appRoot, 'test-results');
+    fs.mkdirSync(screenshotDir, { recursive: true });
+
+    const electronApp = await electron.launch({
+      args: [mainPath],
+      cwd: appRoot,
+      env: { ...process.env, IHPU_FORCE_PROD: '1', VITE_DEV_SERVER_URL: '' }
+    });
+
+    try {
+      const window = await electronApp.firstWindow();
+      await window.waitForLoadState('domcontentloaded');
+
+      // Wipe any persisted session from a prior test run.
+      await window.getByTestId('new-test-button').click();
+
+      // Overlay card visible from startup with empty state.
+      await expect(window.getByTestId('overlay-section')).toBeVisible();
+      await expect(window.getByTestId('overlay-status')).toContainText('Ingen sammenligningsfiler');
+      await expect(window.getByTestId('overlay-summary')).toContainText('0 filer');
+      await expect(window.locator('[data-testid="overlay-table"] tbody tr')).toHaveCount(0);
+
+      // Upload canonical fixture as primary source.
+      await window.getByTestId('file-input').setInputFiles(fixturePath);
+      await expect(window.getByTestId('parsed-row-count')).toHaveText('461');
+      await expect(window.getByTestId('pressure-drop-bar')).toContainText('15.108');
+      await expect(window.getByTestId('hold-status')).toHaveText('PASS');
+
+      // Add the SAME fixture into the overlay set.
+      await window.getByTestId('overlay-file-input').setInputFiles(fixturePath);
+      await expect(window.getByTestId('overlay-status')).toContainText('lagt til');
+      await expect(window.locator('[data-testid="overlay-table"] tbody tr')).toHaveCount(1);
+      await expect(window.getByTestId('overlay-summary')).toContainText('1 fil');
+
+      // Overlay row preserves its own numbers (461 rows, ~15.108 T2 drop).
+      const firstRow = window.locator('[data-testid="overlay-row"]').first();
+      await expect(firstRow).toContainText('461');
+      await expect(firstRow).toContainText('15.108');
+      await expect(firstRow).toContainText('PASS');
+
+      // Primary dashboard is unchanged after overlay add.
+      await expect(window.getByTestId('parsed-row-count')).toHaveText('461');
+      await expect(window.getByTestId('pressure-drop-bar')).toContainText('15.108');
+      await expect(window.getByTestId('hold-status')).toHaveText('PASS');
+
+      // Add a SECOND copy (overlay supports multiple) and verify count.
+      await window.getByTestId('overlay-file-input').setInputFiles(fixturePath);
+      await expect(window.locator('[data-testid="overlay-table"] tbody tr')).toHaveCount(2);
+      await expect(window.getByTestId('overlay-summary')).toContainText('2 filer');
+
+      // Remove one row from the overlay table; primary still unchanged.
+      await window.locator('[data-testid="overlay-remove-row"]').first().click();
+      await expect(window.locator('[data-testid="overlay-table"] tbody tr')).toHaveCount(1);
+      await expect(window.getByTestId('parsed-row-count')).toHaveText('461');
+      await expect(window.getByTestId('pressure-drop-bar')).toContainText('15.108');
+
+      // Clear overlay; primary still unchanged.
+      await window.getByTestId('overlay-clear-button').click();
+      await expect(window.locator('[data-testid="overlay-table"] tbody tr')).toHaveCount(0);
+      await expect(window.getByTestId('overlay-status')).toContainText('tømt');
+      await expect(window.getByTestId('parsed-row-count')).toHaveText('461');
+      await expect(window.getByTestId('pressure-drop-bar')).toContainText('15.108');
+
+      await window.screenshot({
+        path: path.join(screenshotDir, 'electron-overlay-flow.png'),
+        fullPage: true
+      });
+    } finally {
+      await electronApp.close();
+    }
+  });
+
   test('session flow: autosave + reload restores manual rows + new-test clears', async () => {
     const appRoot = process.cwd();
     const mainPath = path.join(appRoot, 'dist-electron', 'main.js');

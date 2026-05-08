@@ -7,8 +7,12 @@
 import type { PressureChart, SelectedRange } from '../charts/pressureChart';
 import { evaluateHoldPeriod } from '../domain/holdPeriod';
 import { parseIhpuPressureLog } from '../domain/ihpuParser';
+import {
+  buildOverlayEntry,
+  type OverlayEntry
+} from '../domain/overlay';
 import { calculatePressureDrop, selectRowsInTimeRange } from '../domain/pressureAnalysis';
-import type { PressureChannel, PressureRow } from '../domain/types';
+import type { HoldPeriodCriteria, PressureChannel, PressureRow } from '../domain/types';
 import { buildManualParseResult } from '../manual/manualRows';
 import {
   newManualRow,
@@ -216,6 +220,30 @@ export function wireEvents(ctx: AppContext): void {
       const rowId = btn.dataset.rowId;
       if (!rowId) return;
       handleManualDelete(ctx, rowId);
+    });
+  }
+
+  // Overlay controls
+  const overlayInput = qs<HTMLInputElement>(ctx.root, 'overlay-file-input');
+  if (overlayInput) {
+    overlayInput.addEventListener('change', () => {
+      void handleOverlayFilesSelected(ctx, overlayInput);
+    });
+  }
+  const overlayClearBtn = qs<HTMLButtonElement>(ctx.root, 'overlay-clear-button');
+  if (overlayClearBtn) {
+    overlayClearBtn.addEventListener('click', () => handleOverlayClear(ctx));
+  }
+  const overlayTable = qs<HTMLElement>(ctx.root, 'overlay-table');
+  if (overlayTable) {
+    overlayTable.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const btn = target.closest<HTMLButtonElement>('[data-testid="overlay-remove-row"]');
+      if (!btn) return;
+      const id = btn.dataset.entryId;
+      if (!id) return;
+      handleOverlayRemove(ctx, id);
     });
   }
 
@@ -498,6 +526,129 @@ function handleManualClear(ctx: AppContext): void {
   if (ctx.state.sourceMode === 'manual') {
     applyActiveSource(ctx);
   }
+  commit(ctx);
+}
+
+// ---------- overlay handlers ----------
+
+function currentOverlayCriteria(ctx: AppContext): HoldPeriodCriteria {
+  return {
+    targetPressure:
+      ctx.state.targetPressure !== null && Number.isFinite(ctx.state.targetPressure)
+        ? ctx.state.targetPressure
+        : undefined,
+    maxDropPct: ctx.state.maxDropPct
+  };
+}
+
+async function handleOverlayFilesSelected(
+  ctx: AppContext,
+  input: HTMLInputElement
+): Promise<void> {
+  const fileList = input.files;
+  if (!fileList || fileList.length === 0) return;
+
+  // Snapshot to a real array — FileList changes when we reset input.value below.
+  const files = Array.from(fileList);
+  const criteria = currentOverlayCriteria(ctx);
+
+  const successes: OverlayEntry[] = [];
+  const failures: { name: string; reason: string }[] = [];
+
+  for (const file of files) {
+    let text: string;
+    try {
+      text = await file.text();
+    } catch (err) {
+      failures.push({
+        name: file.name,
+        reason: err instanceof Error ? err.message : String(err)
+      });
+      continue;
+    }
+
+    const result = buildOverlayEntry({
+      filename: file.name,
+      fileText: text,
+      criteria
+    });
+
+    if (result.ok) {
+      successes.push(result.entry);
+    } else {
+      failures.push({ name: file.name, reason: result.message });
+    }
+  }
+
+  if (successes.length > 0) {
+    ctx.state.overlay.entries = [...ctx.state.overlay.entries, ...successes];
+  }
+
+  ctx.state.overlay.addStatus = composeOverlayAddStatus(successes.length, failures);
+
+  // Reset the input so the same filename can be re-uploaded.
+  input.value = '';
+
+  commit(ctx);
+}
+
+function composeOverlayAddStatus(
+  successCount: number,
+  failures: { name: string; reason: string }[]
+): { kind: 'idle' | 'success' | 'warning' | 'error'; message: string } {
+  if (successCount === 0 && failures.length === 0) {
+    return { kind: 'idle', message: 'Ingen filer valgt.' };
+  }
+  if (failures.length === 0) {
+    const noun = successCount === 1 ? 'fil' : 'filer';
+    return {
+      kind: 'success',
+      message: `${successCount} ${noun} lagt til i sammenligning.`
+    };
+  }
+  if (successCount === 0) {
+    const first = failures[0];
+    const extra = failures.length > 1 ? ` (+ ${failures.length - 1} til)` : '';
+    return {
+      kind: 'error',
+      message: `Kunne ikke legge til ${failures.length} fil(er): ${first.name}: ${first.reason}${extra}`
+    };
+  }
+  const first = failures[0];
+  const extra = failures.length > 1 ? ` (+ ${failures.length - 1} til)` : '';
+  return {
+    kind: 'warning',
+    message: `${successCount} OK · ${failures.length} feilet: ${first.name}: ${first.reason}${extra}`
+  };
+}
+
+function handleOverlayRemove(ctx: AppContext, id: string): void {
+  const before = ctx.state.overlay.entries.length;
+  ctx.state.overlay.entries = ctx.state.overlay.entries.filter((e) => e.id !== id);
+  const after = ctx.state.overlay.entries.length;
+  if (after === 0) {
+    ctx.state.overlay.addStatus = {
+      kind: 'idle',
+      message: 'Ingen sammenligningsfiler lastet ennå.'
+    };
+  } else if (after < before) {
+    ctx.state.overlay.addStatus = {
+      kind: 'idle',
+      message: `Fjernet en sammenligning · ${after} igjen.`
+    };
+  }
+  commit(ctx);
+}
+
+function handleOverlayClear(ctx: AppContext): void {
+  if (ctx.state.overlay.entries.length === 0) {
+    return;
+  }
+  ctx.state.overlay.entries = [];
+  ctx.state.overlay.addStatus = {
+    kind: 'idle',
+    message: 'Sammenligning tømt.'
+  };
   commit(ctx);
 }
 
@@ -812,6 +963,7 @@ function handleNewTest(ctx: AppContext): void {
   ctx.state.manualValidation = fresh.manualValidation;
   ctx.state.sessionId = null;
   ctx.state.sessionCreatedAtIso = null;
+  ctx.state.overlay = fresh.overlay;
 
   ctx.chart.destroy();
   ctx.chart.setSelectedRange(null);
