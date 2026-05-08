@@ -162,6 +162,20 @@ intentionally deferred to a follow-up PR.
 
 See [docs/development/report-export-foundation.md](docs/development/report-export-foundation.md).
 
+## Manual data entry
+
+Operators can also type pressure data row by row, or paste tab-separated
+tables, when a complete log file isn't available. Manual rows feed the
+**same** parser/analysis/chart/report pipeline as file uploads — there is
+no parallel analysis path for manual data, and the canonical parser /
+domain layer remains untouched.
+
+The "Datakilde" section at the top of the app exposes a radio toggle
+between file upload and manual entry. Both inputs are kept in state, so the
+operator can switch back and forth without re-uploading or re-typing.
+
+See [docs/development/manual-entry-and-validation.md](docs/development/manual-entry-and-validation.md).
+
 ## Migration roadmap
 
 1. ~~Bootstrap structure~~ (done)
@@ -171,7 +185,9 @@ See [docs/development/report-export-foundation.md](docs/development/report-expor
 5. ~~File upload + summary UI~~ (done)
 6. ~~Chart + period selection~~ (done)
 7. ~~CSV / PDF report export foundation~~ (done)
-8. Manual data entry + validation
-9. Multi-file overlay / comparison
-10. Windows installer + ICO + code-sign + release packaging
-11. Final UI polish + operator QA checklist
+8. ~~Manual data entry + validation~~ (done)
+9. Test-session workflow + project persistence (autosave, restore, JSON import/export)
+10. Multi-file overlay / comparison
+11. Report polish + chart image in PDF
+12. Windows installer + ICO + code-sign + release packaging
+13. Final UI polish + operator QA checklist

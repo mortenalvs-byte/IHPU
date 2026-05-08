@@ -28,12 +28,72 @@ export function mountAppShell(root: HTMLElement, markers: AppShellMarkers): void
     <main class="app-main">
       <p class="app-ready" data-testid="app-ready">${escapeForStaticTemplate(markers.appReady)}</p>
 
-      <section class="upload-section">
-        <h2>Last opp trykktestlogg</h2>
-        <input type="file" data-testid="file-input" accept=".txt,.csv,.dat,.tsv,.log" />
-        <p class="file-status" data-testid="file-status">${escapeForStaticTemplate(
-          markers.fileStatusInitial
-        )}</p>
+      <section class="card data-source-section">
+        <h2>Datakilde</h2>
+        <div class="data-source-mode" data-testid="data-source-mode">
+          <label>
+            <input type="radio" name="data-source-mode" value="file" checked />
+            Fil-opplasting
+          </label>
+          <label>
+            <input type="radio" name="data-source-mode" value="manual" />
+            Manuell registrering
+          </label>
+        </div>
+
+        <div class="upload-section">
+          <h3>Last opp trykktestlogg</h3>
+          <input type="file" data-testid="file-input" accept=".txt,.csv,.dat,.tsv,.log" />
+          <p class="file-status" data-testid="file-status">${escapeForStaticTemplate(
+            markers.fileStatusInitial
+          )}</p>
+        </div>
+
+        <div class="manual-entry-section" data-testid="manual-entry-section">
+          <h3>Manuell registrering</h3>
+
+          <div class="manual-add-row">
+            <label><span>Dato</span><input type="text" data-testid="manual-date-input" placeholder="DD.MM.YYYY" autocomplete="off" /></label>
+            <label><span>Tid</span><input type="text" data-testid="manual-time-input" placeholder="HH:MM:SS" autocomplete="off" /></label>
+            <label><span>T1 (bar)</span><input type="text" data-testid="manual-p1-input" placeholder="—" autocomplete="off" /></label>
+            <label><span>T2 (bar)</span><input type="text" data-testid="manual-p2-input" placeholder="—" autocomplete="off" /></label>
+            <button type="button" data-testid="manual-add-row-button">Legg til rad</button>
+          </div>
+
+          <div class="manual-paste-block">
+            <label>
+              <span>Lim inn tabelltekst (DD.MM.YYYY HH:MM:SS&lt;TAB&gt;T1&lt;TAB&gt;T2)</span>
+              <textarea data-testid="manual-paste-input" rows="3" placeholder="21.02.2026 13:10:37	-2.96	314.39"></textarea>
+            </label>
+            <button type="button" data-testid="manual-paste-button">Importer fra paste</button>
+          </div>
+
+          <div class="manual-summary">
+            <span>Antall rader: <strong data-testid="manual-row-count">0</strong></span>
+            <p class="manual-validation-errors" data-testid="manual-validation-errors">Ingen rader registrert.</p>
+          </div>
+
+          <div class="manual-table-wrapper">
+            <table class="manual-table" data-testid="manual-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Dato</th>
+                  <th>Tid</th>
+                  <th>T1</th>
+                  <th>T2</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <div class="manual-actions">
+            <button type="button" data-testid="manual-use-rows-button">Bruk manuelle rader</button>
+            <button type="button" data-testid="manual-clear-rows">Tøm manuelle rader</button>
+          </div>
+        </div>
       </section>
 
       <section class="card file-summary-section">
@@ -255,8 +315,80 @@ export function render(root: HTMLElement, state: AppState): void {
   // Report section + export buttons
   renderReportSection(root, state);
 
+  // Manual entry section (radios + table + validation summary)
+  renderManualSection(root, state);
+
   // Issues
   setText(root, 'issue-summary', composeIssueSummary(state));
+}
+
+function renderManualSection(root: HTMLElement, state: AppState): void {
+  // Sync source-mode radios with state
+  const radios = root.querySelectorAll<HTMLInputElement>(
+    '[data-testid="data-source-mode"] input[type="radio"]'
+  );
+  radios.forEach((r) => {
+    r.checked = r.value === state.sourceMode;
+  });
+
+  setText(root, 'manual-row-count', String(state.manualRows.length));
+  setText(root, 'manual-validation-errors', composeManualValidationSummary(state));
+
+  // Render table body via DOM API (avoids innerHTML on user-controlled cells).
+  const table = root.querySelector<HTMLTableElement>('[data-testid="manual-table"]');
+  const tbody = table?.querySelector('tbody');
+  if (!tbody) return;
+  while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+  state.manualRows.forEach((row, index) => {
+    const tr = document.createElement('tr');
+    tr.dataset.rowId = row.id;
+    appendCell(tr, String(index + 1));
+    appendCell(tr, row.dateText || '—');
+    appendCell(tr, row.timeText || '—');
+    appendCell(tr, row.p1Text || '—');
+    appendCell(tr, row.p2Text || '—');
+
+    const actCell = document.createElement('td');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.dataset.testid = 'manual-delete-row';
+    btn.dataset.rowId = row.id;
+    btn.textContent = 'Slett';
+    btn.setAttribute('aria-label', `Slett rad ${index + 1}`);
+    actCell.appendChild(btn);
+    tr.appendChild(actCell);
+
+    tbody.appendChild(tr);
+  });
+}
+
+function appendCell(tr: HTMLTableRowElement, text: string): void {
+  const td = document.createElement('td');
+  td.textContent = text;
+  tr.appendChild(td);
+}
+
+function composeManualValidationSummary(state: AppState): string {
+  if (state.manualRows.length === 0) return 'Ingen rader registrert.';
+  const v = state.manualValidation;
+  if (!v) return 'Ikke validert.';
+
+  if (v.errors.length === 0 && v.warnings.length === 0) {
+    return `${v.validRowCount} av ${v.totalRowCount} rader gyldige. Klart for "Bruk manuelle rader".`;
+  }
+  const parts: string[] = [];
+  if (v.errors.length > 0) {
+    parts.push(`${v.errors.length} feil`);
+  }
+  if (v.warnings.length > 0) {
+    parts.push(`${v.warnings.length} advarsler`);
+  }
+  parts.push(`${v.validRowCount} av ${v.totalRowCount} rader gyldige`);
+  // Surface first concrete issue so the operator knows where to look.
+  const firstIssue = v.errors[0] ?? v.warnings[0];
+  if (firstIssue) parts.push(`Først: ${firstIssue.message}`);
+  return parts.join(' · ');
 }
 
 function renderReportSection(root: HTMLElement, state: AppState): void {
