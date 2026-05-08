@@ -9,6 +9,13 @@ import { evaluateHoldPeriod } from '../domain/holdPeriod';
 import { parseIhpuPressureLog } from '../domain/ihpuParser';
 import { calculatePressureDrop, selectRowsInTimeRange } from '../domain/pressureAnalysis';
 import type { PressureChannel, PressureRow } from '../domain/types';
+import { buildManualParseResult } from '../manual/manualRows';
+import {
+  newManualRow,
+  type DataSourceMode,
+  type ManualRow
+} from '../manual/manualTypes';
+import { parseManualPaste, validateManualRows } from '../manual/manualValidation';
 import {
   buildReportCsv,
   buildSafeReportFilename,
@@ -151,6 +158,53 @@ export function wireEvents(ctx: AppContext): void {
       handleExportPdf(ctx);
     });
   }
+
+  // Manual entry: source-mode radios
+  const sourceModeRoot = qs<HTMLElement>(ctx.root, 'data-source-mode');
+  if (sourceModeRoot) {
+    sourceModeRoot.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement | null;
+      if (!target || target.name !== 'data-source-mode') return;
+      const v = target.value;
+      if (v === 'file' || v === 'manual') {
+        handleSourceModeChange(ctx, v);
+      }
+    });
+  }
+
+  const manualAddBtn = qs<HTMLButtonElement>(ctx.root, 'manual-add-row-button');
+  if (manualAddBtn) {
+    manualAddBtn.addEventListener('click', () => handleManualRowAdd(ctx));
+  }
+
+  const manualPasteBtn = qs<HTMLButtonElement>(ctx.root, 'manual-paste-button');
+  if (manualPasteBtn) {
+    manualPasteBtn.addEventListener('click', () => handleManualPaste(ctx));
+  }
+
+  const manualClearBtn = qs<HTMLButtonElement>(ctx.root, 'manual-clear-rows');
+  if (manualClearBtn) {
+    manualClearBtn.addEventListener('click', () => handleManualClear(ctx));
+  }
+
+  const manualUseBtn = qs<HTMLButtonElement>(ctx.root, 'manual-use-rows-button');
+  if (manualUseBtn) {
+    manualUseBtn.addEventListener('click', () => handleUseManualRows(ctx));
+  }
+
+  // Event delegation for per-row delete buttons in the manual table.
+  const manualTable = qs<HTMLElement>(ctx.root, 'manual-table');
+  if (manualTable) {
+    manualTable.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const btn = target.closest<HTMLButtonElement>('[data-testid="manual-delete-row"]');
+      if (!btn) return;
+      const rowId = btn.dataset.rowId;
+      if (!rowId) return;
+      handleManualDelete(ctx, rowId);
+    });
+  }
 }
 
 function handleExportCsv(ctx: AppContext): void {
@@ -238,6 +292,7 @@ async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Pro
   ctx.state.userMessage = null;
   ctx.state.chartError = null;
   ctx.state.selectedFileName = file.name;
+  ctx.state.sourceMode = 'file';
 
   // Reset any prior period selection — a new file means a new range.
   ctx.state.selectedFromTimestampMs = null;
@@ -250,6 +305,7 @@ async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Pro
   try {
     text = await file.text();
   } catch (err) {
+    ctx.state.fileParseResult = null;
     ctx.state.parseResult = null;
     ctx.state.baselineDrop = null;
     ctx.state.targetDrop = null;
@@ -265,8 +321,11 @@ async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Pro
   }
 
   try {
-    ctx.state.parseResult = parseIhpuPressureLog(text, { sourceName: file.name });
+    const fileResult = parseIhpuPressureLog(text, { sourceName: file.name });
+    ctx.state.fileParseResult = fileResult;
+    ctx.state.parseResult = fileResult;
   } catch (err) {
+    ctx.state.fileParseResult = null;
     ctx.state.parseResult = null;
     ctx.state.userMessage = {
       severity: 'error',
@@ -274,12 +333,50 @@ async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Pro
     };
   }
 
+  applyActiveSource(ctx);
+  render(ctx.root, ctx.state);
+}
+
+/**
+ * Recompute everything that depends on the active data source: rebuild the
+ * `parseResult` pointer (file vs manual), re-run analysis, refresh the chart.
+ *
+ * Called whenever a source becomes active or its underlying data changes
+ * (file uploaded, manual rows committed via "Bruk manuelle rader", source
+ * mode toggled by the radio).
+ */
+function applyActiveSource(ctx: AppContext): void {
+  if (ctx.state.sourceMode === 'manual') {
+    if (ctx.state.manualRows.length > 0) {
+      const sourceName =
+        ctx.state.selectedFileName && ctx.state.selectedFileName.startsWith('Manual entry')
+          ? ctx.state.selectedFileName
+          : 'Manual entry';
+      ctx.state.parseResult = buildManualParseResult(ctx.state.manualRows, sourceName);
+      ctx.state.selectedFileName = sourceName;
+    } else {
+      ctx.state.parseResult = null;
+    }
+  } else {
+    ctx.state.parseResult = ctx.state.fileParseResult;
+  }
+
+  // Reset period selection when the source changes — old timestamps may not
+  // exist in the new dataset.
+  if (ctx.state.parseResult === null) {
+    ctx.state.selectedFromTimestampMs = null;
+    ctx.state.selectedToTimestampMs = null;
+    ctx.state.selectedFromTimeText = '';
+    ctx.state.selectedToTimeText = '';
+  }
+
   recomputeAnalysis(ctx);
 
-  // Mount chart with the freshly parsed data.
+  // Re-mount the chart with the new dataset (or destroy if empty).
   if (ctx.state.parseResult && ctx.state.parseResult.rows.length > 0) {
     try {
       ctx.chart.setData(ctx.state.parseResult.rows);
+      ctx.chart.setSelectedRange(null);
       ctx.state.chartReady = true;
       ctx.state.chartError = null;
     } catch (err) {
@@ -290,7 +387,94 @@ async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Pro
     ctx.chart.destroy();
     ctx.state.chartReady = false;
   }
+}
 
+// ---------- manual entry handlers ----------
+
+function recomputeManualValidation(ctx: AppContext): void {
+  ctx.state.manualValidation = validateManualRows(ctx.state.manualRows);
+}
+
+function handleSourceModeChange(ctx: AppContext, mode: DataSourceMode): void {
+  if (ctx.state.sourceMode === mode) return;
+  ctx.state.sourceMode = mode;
+  applyActiveSource(ctx);
+  render(ctx.root, ctx.state);
+}
+
+function handleManualRowAdd(ctx: AppContext): void {
+  const dateInput = qs<HTMLInputElement>(ctx.root, 'manual-date-input');
+  const timeInput = qs<HTMLInputElement>(ctx.root, 'manual-time-input');
+  const p1Input = qs<HTMLInputElement>(ctx.root, 'manual-p1-input');
+  const p2Input = qs<HTMLInputElement>(ctx.root, 'manual-p2-input');
+  if (!dateInput || !timeInput || !p1Input || !p2Input) return;
+
+  const row: ManualRow = newManualRow({
+    dateText: dateInput.value,
+    timeText: timeInput.value,
+    p1Text: p1Input.value,
+    p2Text: p2Input.value
+  });
+  ctx.state.manualRows = [...ctx.state.manualRows, row];
+
+  // Clear inputs so the operator can type the next row immediately.
+  dateInput.value = '';
+  timeInput.value = '';
+  p1Input.value = '';
+  p2Input.value = '';
+
+  recomputeManualValidation(ctx);
+  render(ctx.root, ctx.state);
+}
+
+function handleManualPaste(ctx: AppContext): void {
+  const pasteInput = qs<HTMLTextAreaElement>(ctx.root, 'manual-paste-input');
+  if (!pasteInput) return;
+  const text = pasteInput.value;
+  if (text.trim() === '') return;
+
+  const outcome = parseManualPaste(text);
+  if (outcome.rows.length > 0) {
+    ctx.state.manualRows = [...ctx.state.manualRows, ...outcome.rows];
+  }
+  // Clear the textarea after paste so subsequent pastes are clean.
+  pasteInput.value = '';
+
+  recomputeManualValidation(ctx);
+
+  ctx.state.userMessage = {
+    severity: outcome.rejected > 0 ? 'warning' : 'info',
+    text: `Lim inn fullført: ${outcome.imported} importert, ${outcome.rejected} avvist.`
+  };
+
+  render(ctx.root, ctx.state);
+}
+
+function handleManualDelete(ctx: AppContext, rowId: string): void {
+  ctx.state.manualRows = ctx.state.manualRows.filter((r) => r.id !== rowId);
+  recomputeManualValidation(ctx);
+
+  // If we're using manual rows as the active source, refresh the pipeline.
+  if (ctx.state.sourceMode === 'manual') {
+    applyActiveSource(ctx);
+  }
+
+  render(ctx.root, ctx.state);
+}
+
+function handleManualClear(ctx: AppContext): void {
+  ctx.state.manualRows = [];
+  recomputeManualValidation(ctx);
+  if (ctx.state.sourceMode === 'manual') {
+    applyActiveSource(ctx);
+  }
+  render(ctx.root, ctx.state);
+}
+
+function handleUseManualRows(ctx: AppContext): void {
+  recomputeManualValidation(ctx);
+  ctx.state.sourceMode = 'manual';
+  applyActiveSource(ctx);
   render(ctx.root, ctx.state);
 }
 

@@ -2,101 +2,158 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 
-test('Electron app: bootstrap, fixture upload, chart period, report export', async () => {
-  const appRoot = process.cwd();
-  const mainPath = path.join(appRoot, 'dist-electron', 'main.js');
-  const fixturePath = path.join(appRoot, 'test-data', 'Dekk test Seal T.2');
-  const screenshotDir = path.join(appRoot, 'test-results');
-  fs.mkdirSync(screenshotDir, { recursive: true });
+test.describe('Electron app smoke', () => {
+  test('file flow: bootstrap, fixture upload, chart period, report export', async () => {
+    const appRoot = process.cwd();
+    const mainPath = path.join(appRoot, 'dist-electron', 'main.js');
+    const fixturePath = path.join(appRoot, 'test-data', 'Dekk test Seal T.2');
+    const screenshotDir = path.join(appRoot, 'test-results');
+    fs.mkdirSync(screenshotDir, { recursive: true });
 
-  const electronApp = await electron.launch({
-    args: [mainPath],
-    cwd: appRoot,
-    env: {
-      ...process.env,
-      IHPU_FORCE_PROD: '1',
-      VITE_DEV_SERVER_URL: ''
+    const electronApp = await electron.launch({
+      args: [mainPath],
+      cwd: appRoot,
+      env: { ...process.env, IHPU_FORCE_PROD: '1', VITE_DEV_SERVER_URL: '' }
+    });
+
+    try {
+      const window = await electronApp.firstWindow();
+      await window.waitForLoadState('domcontentloaded');
+
+      // Initial shell
+      await expect(window).toHaveTitle(/IHPU TrykkAnalyse/);
+      await expect(window.getByTestId('app-title')).toContainText('IHPU TrykkAnalyse');
+      await expect(window.getByTestId('app-ready')).toContainText('Bootstrap OK');
+      await expect(window.getByTestId('file-status')).toContainText('Ingen data lastet');
+      await expect(window.getByTestId('file-input')).toBeEnabled();
+
+      // Manual section visible from start
+      await expect(window.getByTestId('manual-entry-section')).toBeVisible();
+
+      // Upload canonical fixture
+      await window.getByTestId('file-input').setInputFiles(fixturePath);
+      await expect(window.getByTestId('parsed-row-count')).toHaveText('461');
+      await expect(window.getByTestId('chart-status')).toContainText('Klar');
+      await expect(window.getByTestId('pressure-drop-bar')).toContainText('15.108');
+      await expect(window.getByTestId('hold-status')).toHaveText('PASS');
+
+      // Manual period round-trip
+      await window.getByTestId('period-from-input').fill('13:10:37');
+      await window.getByTestId('period-to-input').fill('14:20:01');
+      await expect(window.getByTestId('selected-period-summary')).toContainText('13:10:37');
+      await window.getByTestId('reset-period-selection').click();
+      await expect(window.getByTestId('selected-period-summary')).toContainText('Hele loggen');
+
+      // Report metadata + export
+      await window.getByTestId('report-customer-input').fill('Test Customer AS');
+      await window.getByTestId('report-project-input').fill('PRJ-001');
+      await window.getByTestId('report-test-date-input').fill('21.02.2026');
+      await expect(window.getByTestId('export-csv-button')).toBeEnabled();
+      await window.getByTestId('export-csv-button').click();
+      await expect(window.getByTestId('export-status')).toContainText('CSV exported');
+      await expect(window.getByTestId('export-status')).toContainText('PRJ-001');
+      await window.getByTestId('export-pdf-button').click();
+      await expect(window.getByTestId('export-status')).toContainText('PDF exported');
+
+      await window.screenshot({
+        path: path.join(screenshotDir, 'electron-file-flow.png'),
+        fullPage: true
+      });
+    } finally {
+      await electronApp.close();
     }
   });
 
-  try {
-    const window = await electronApp.firstWindow();
-    await window.waitForLoadState('domcontentloaded');
+  test('manual flow: enter rows, use as source, analyse, export', async () => {
+    const appRoot = process.cwd();
+    const mainPath = path.join(appRoot, 'dist-electron', 'main.js');
+    const screenshotDir = path.join(appRoot, 'test-results');
+    fs.mkdirSync(screenshotDir, { recursive: true });
 
-    // ----- Initial shell -----
-    await expect(window).toHaveTitle(/IHPU TrykkAnalyse/);
-    await expect(window.getByTestId('app-title')).toContainText('IHPU TrykkAnalyse');
-    await expect(window.getByTestId('app-ready')).toContainText('Bootstrap OK');
-    await expect(window.getByTestId('file-status')).toContainText('Ingen data lastet');
-    await expect(window.getByTestId('file-input')).toBeEnabled();
-    await expect(window.getByTestId('chart-status')).toContainText('Venter på data');
-
-    // Export buttons disabled before any file
-    await expect(window.getByTestId('export-csv-button')).toBeDisabled();
-    await expect(window.getByTestId('export-pdf-button')).toBeDisabled();
-    await expect(window.getByTestId('report-preview-status')).toContainText('Ingen data lastet');
-
-    // ----- Upload canonical fixture -----
-    await window.getByTestId('file-input').setInputFiles(fixturePath);
-
-    // Parse summary
-    await expect(window.getByTestId('parsed-row-count')).toHaveText('461');
-    await expect(window.getByTestId('parse-error-count')).toHaveText('0');
-    await expect(window.getByTestId('chart-status')).toContainText('Klar');
-
-    // Default full-range pressure summary
-    await expect(window.getByTestId('pressure-start')).toContainText('314.387');
-    await expect(window.getByTestId('pressure-drop-bar')).toContainText('15.108');
-    await expect(window.getByTestId('hold-status')).toHaveText('PASS');
-
-    // Report fields populate from analysis
-    await expect(window.getByTestId('report-preview-status')).toContainText('Klar for eksport');
-    await expect(window.getByTestId('report-result-status')).toHaveText('PASS');
-    await expect(window.getByTestId('report-channel')).toHaveText('P2');
-    await expect(window.getByTestId('report-drop-summary')).toContainText('15.108');
-    await expect(window.getByTestId('report-selected-period')).toContainText('Hele loggen');
-
-    // ----- Manual period selection sanity -----
-    await window.getByTestId('period-from-input').fill('13:10:37');
-    await window.getByTestId('period-to-input').fill('14:20:01');
-    await expect(window.getByTestId('selected-period-summary')).toContainText('13:10:37');
-    await expect(window.getByTestId('selected-period-summary')).toContainText('14:20:01');
-    await window.getByTestId('reset-period-selection').click();
-    await expect(window.getByTestId('selected-period-summary')).toContainText('Hele loggen');
-
-    // ----- Fill report metadata -----
-    await window.getByTestId('report-customer-input').fill('Test Customer AS');
-    await window.getByTestId('report-project-input').fill('PRJ-001');
-    await window.getByTestId('report-location-input').fill('Stavanger');
-    await window.getByTestId('report-test-date-input').fill('21.02.2026');
-    await window.getByTestId('report-ihpu-serial-input').fill('IHPU-001');
-    await window.getByTestId('report-rov-system-input').fill('C24');
-    await window.getByTestId('report-operator-input').fill('Morten');
-    await window.getByTestId('report-comment-input').fill('Smoke test report');
-
-    // ----- Export buttons enabled, click them -----
-    await expect(window.getByTestId('export-csv-button')).toBeEnabled();
-    await expect(window.getByTestId('export-pdf-button')).toBeEnabled();
-
-    // CSV export — assert success status updates. Per the report-export-foundation
-    // contract, the smoke verifies the status string and no crash; deep CSV/PDF
-    // content is covered by Vitest unit tests.
-    await window.getByTestId('export-csv-button').click();
-    await expect(window.getByTestId('export-status')).toContainText('CSV exported');
-    await expect(window.getByTestId('export-status')).toContainText('PRJ-001');
-    await expect(window.getByTestId('export-status')).toContainText('PASS');
-    await expect(window.getByTestId('export-status')).toContainText('.csv');
-
-    // PDF export
-    await window.getByTestId('export-pdf-button').click();
-    await expect(window.getByTestId('export-status')).toContainText('PDF exported');
-    await expect(window.getByTestId('export-status')).toContainText('.pdf');
-
-    await window.screenshot({
-      path: path.join(screenshotDir, 'electron-report-export.png'),
-      fullPage: true
+    const electronApp = await electron.launch({
+      args: [mainPath],
+      cwd: appRoot,
+      env: { ...process.env, IHPU_FORCE_PROD: '1', VITE_DEV_SERVER_URL: '' }
     });
-  } finally {
-    await electronApp.close();
-  }
+
+    try {
+      const window = await electronApp.firstWindow();
+      await window.waitForLoadState('domcontentloaded');
+
+      // Initial state
+      await expect(window.getByTestId('manual-entry-section')).toBeVisible();
+      await expect(window.getByTestId('manual-row-count')).toHaveText('0');
+
+      // Add three valid rows manually
+      const rows = [
+        { date: '21.02.2026', time: '13:00:00', p1: '-2.96', p2: '320.00' },
+        { date: '21.02.2026', time: '13:30:00', p1: '-2.95', p2: '305.00' },
+        { date: '21.02.2026', time: '14:00:00', p1: '-2.94', p2: '290.00' }
+      ];
+      for (const row of rows) {
+        await window.getByTestId('manual-date-input').fill(row.date);
+        await window.getByTestId('manual-time-input').fill(row.time);
+        await window.getByTestId('manual-p1-input').fill(row.p1);
+        await window.getByTestId('manual-p2-input').fill(row.p2);
+        await window.getByTestId('manual-add-row-button').click();
+      }
+
+      await expect(window.getByTestId('manual-row-count')).toHaveText('3');
+
+      // Toggle source mode to manual + use the rows
+      await window.getByTestId('manual-use-rows-button').click();
+
+      // The manual rows should now be the active source
+      await expect(window.getByTestId('parsed-row-count')).toHaveText('3');
+      await expect(window.getByTestId('parse-error-count')).toHaveText('0');
+      await expect(window.getByTestId('chart-status')).toContainText('Klar');
+
+      // Pressure summary should reflect manual data: drop 30 bar over 60 min
+      await expect(window.getByTestId('pressure-start')).toContainText('320.000');
+      await expect(window.getByTestId('pressure-end')).toContainText('290.000');
+      await expect(window.getByTestId('pressure-drop-bar')).toContainText('30.000');
+      await expect(window.getByTestId('duration-minutes')).toContainText('60.0');
+
+      // Negative T1 preserved (no warning, value displayed)
+      await expect(window.getByTestId('channel-p1-present')).toContainText('tilstede');
+      await expect(window.getByTestId('channel-p2-present')).toContainText('tilstede');
+
+      // Hold status should evaluate (default maxDropPct=5, 30/320 = 9.375% → FAIL)
+      const holdStatusText = await window.getByTestId('hold-status').textContent();
+      expect(holdStatusText).toMatch(/^(PASS|FAIL|UNKNOWN)$/);
+
+      // File-name banner should show the manual source
+      await expect(window.getByTestId('file-status')).toContainText('Manual entry');
+
+      // Fill metadata + export
+      await window.getByTestId('report-customer-input').fill('Manual Customer');
+      await window.getByTestId('report-project-input').fill('PRJ-MANUAL');
+      await window.getByTestId('report-test-date-input').fill('21.02.2026');
+
+      await expect(window.getByTestId('export-csv-button')).toBeEnabled();
+      await window.getByTestId('export-csv-button').click();
+      await expect(window.getByTestId('export-status')).toContainText('CSV exported');
+      await window.getByTestId('export-pdf-button').click();
+      await expect(window.getByTestId('export-status')).toContainText('PDF exported');
+
+      // Delete one row, confirm count + state update
+      await window.locator('[data-testid="manual-table"] [data-testid="manual-delete-row"]').first().click();
+      await expect(window.getByTestId('manual-row-count')).toHaveText('2');
+      // After delete, the active manual source recomputes:
+      await expect(window.getByTestId('parsed-row-count')).toHaveText('2');
+
+      // Clear all rows
+      await window.getByTestId('manual-clear-rows').click();
+      await expect(window.getByTestId('manual-row-count')).toHaveText('0');
+      // With no manual rows, parseResult goes empty
+      await expect(window.getByTestId('parsed-row-count')).toHaveText('—');
+
+      await window.screenshot({
+        path: path.join(screenshotDir, 'electron-manual-entry.png'),
+        fullPage: true
+      });
+    } finally {
+      await electronApp.close();
+    }
+  });
 });

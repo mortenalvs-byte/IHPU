@@ -4,6 +4,11 @@
 // render.ts reads from state and pushes textContent into the DOM. No reducers,
 // no observables, no framework — for a small Electron app this is enough.
 
+import type {
+  DataSourceMode,
+  ManualRow,
+  ManualValidationResult
+} from '../manual/manualTypes';
 import { createDefaultMetadata, type ReportMetadata } from '../reports/reportTypes';
 import type {
   HoldPeriodResult,
@@ -57,6 +62,19 @@ export interface AppState {
   reportMetadata: ReportMetadata;
   /** Export attempt status, surfaced in the UI's `export-status` field. */
   exportStatus: ExportStatus;
+  /**
+   * Active data source. `file` (default) means `parseResult` came from a
+   * file upload; `manual` means it was built from `manualRows`. The toggle
+   * only swaps which source feeds the analysis pipeline — both inputs
+   * remain in state so the operator can switch back and forth.
+   */
+  sourceMode: DataSourceMode;
+  /** Last successfully-parsed file ParseResult. Kept across `manual` mode so file→manual→file works without re-uploading. */
+  fileParseResult: ParseResult | null;
+  /** Operator-edited manual rows (raw strings until validated). */
+  manualRows: ManualRow[];
+  /** Live validation summary of manualRows. Recomputed on every edit. */
+  manualValidation: ManualValidationResult | null;
 }
 
 export type ExportStatusKind = 'idle' | 'success' | 'error';
@@ -87,6 +105,10 @@ export function createState(): AppState {
     holdResult: null,
     userMessage: null,
     reportMetadata: createDefaultMetadata(),
-    exportStatus: { kind: 'idle', message: '' }
+    exportStatus: { kind: 'idle', message: '' },
+    sourceMode: 'file',
+    fileParseResult: null,
+    manualRows: [],
+    manualValidation: null
   };
 }

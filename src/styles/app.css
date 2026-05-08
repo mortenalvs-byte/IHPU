@@ -373,3 +373,187 @@ html, body {
 .export-status.export-error {
   color: var(--fail);
 }
+
+.data-source-mode {
+  display: flex;
+  gap: 1.25rem;
+  margin: 0.25rem 0 1rem;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.9rem;
+  color: var(--fg);
+}
+
+.data-source-mode label {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  cursor: pointer;
+}
+
+.data-source-section .upload-section,
+.data-source-section .manual-entry-section {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.data-source-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  color: var(--accent);
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.manual-add-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) auto;
+  gap: 0.5rem 0.75rem;
+  align-items: end;
+  margin-bottom: 0.6rem;
+}
+
+.manual-add-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.manual-add-row input,
+.manual-paste-block textarea {
+  padding: 0.4rem 0.55rem;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.92rem;
+}
+
+.manual-add-row input:focus,
+.manual-paste-block textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.manual-add-row button,
+.manual-paste-block button,
+.manual-actions button {
+  padding: 0.5rem 0.85rem;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.85rem;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+.manual-add-row button:hover,
+.manual-paste-block button:hover,
+.manual-actions button:hover {
+  background: rgba(65, 216, 255, 0.08);
+}
+
+.manual-paste-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.manual-paste-block label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.manual-paste-block textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.manual-paste-block button {
+  align-self: flex-start;
+}
+
+.manual-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.5rem 0;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.manual-summary strong {
+  color: var(--fg);
+}
+
+.manual-validation-errors {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.manual-table-wrapper {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 0.6rem;
+}
+
+.manual-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+.manual-table thead {
+  background: rgba(255, 255, 255, 0.03);
+  position: sticky;
+  top: 0;
+}
+
+.manual-table th,
+.manual-table td {
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg);
+}
+
+.manual-table th {
+  color: var(--muted);
+  font-weight: normal;
+}
+
+.manual-table button {
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  color: var(--fail);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.manual-table button:hover {
+  background: rgba(255, 107, 107, 0.08);
+  border-color: var(--fail);
+}
+
+.manual-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
