@@ -59,7 +59,7 @@ export function mountAppShell(root: HTMLElement, markers: AppShellMarkers): void
           </label>
         </div>
 
-        <div class="upload-section">
+        <div class="upload-section" data-testid="upload-section">
           <h3>Last opp trykktestlogg</h3>
           <input type="file" data-testid="file-input" accept=".txt,.csv,.dat,.tsv,.log" />
           <p class="file-status" data-testid="file-status">${escapeForStaticTemplate(
@@ -186,6 +186,7 @@ export function mountAppShell(root: HTMLElement, markers: AppShellMarkers): void
         </div>
 
         <dl class="summary-grid">
+          <dt>Hele logg</dt>               <dd data-testid="full-log-summary">—</dd>
           <dt>Valgt periode</dt>           <dd data-testid="selected-period-summary">Hele loggen</dd>
           <dt>Periode-varighet</dt>        <dd data-testid="selected-period-duration">—</dd>
           <dt>Periode starttrykk</dt>      <dd data-testid="selected-period-start-pressure">—</dd>
@@ -196,6 +197,7 @@ export function mountAppShell(root: HTMLElement, markers: AppShellMarkers): void
       <section class="card hold-section">
         <h2>Holdperiode-resultat</h2>
         <p class="hold-status hold-unknown" data-testid="hold-status">—</p>
+        <p class="hold-narrative" data-testid="hold-narrative">Ingen evaluering ennå — last data og sett kriterier.</p>
         <dl class="summary-grid">
           <dt>Brukt drop %</dt>    <dd data-testid="hold-used-drop-pct">—</dd>
           <dt>Tillatt drop %</dt>  <dd data-testid="hold-allowed-drop-pct">—</dd>
@@ -311,11 +313,15 @@ export function mountAppShell(root: HTMLElement, markers: AppShellMarkers): void
  * fields go through `setText` which uses textContent.
  */
 export function render(root: HTMLElement, state: AppState): void {
-  // File status banner
+  // File status banner. The empty-state copy mirrors the initial mount
+  // marker so it tells the operator what to do next ("velg .txt/... eller
+  // bruk Manuell registrering"), not just that nothing is loaded.
   setText(
     root,
     'file-status',
-    state.selectedFileName ? `Lastet: ${state.selectedFileName}` : 'Ingen data lastet'
+    state.selectedFileName
+      ? `Lastet: ${state.selectedFileName}`
+      : 'Ingen data lastet — velg .txt/.csv/.dat/.tsv/.log, eller bruk Manuell registrering.'
   );
 
   // File summary
@@ -351,6 +357,7 @@ export function render(root: HTMLElement, state: AppState): void {
 
   // Chart + period selection
   setText(root, 'chart-status', resolveChartStatus(state));
+  setText(root, 'full-log-summary', resolveFullLogSummary(state));
   setText(root, 'selected-period-summary', resolvePeriodSummary(state));
   setText(root, 'selected-period-duration', fmtDuration(drop?.durationMinutes ?? null));
   setText(root, 'selected-period-start-pressure', fmtPressure(drop?.startPressure ?? null));
@@ -363,6 +370,7 @@ export function render(root: HTMLElement, state: AppState): void {
   const hold = state.holdResult;
   const usedDropPct = hold?.drop.dropPct ?? null;
   setText(root, 'hold-status', hold?.status ?? '—');
+  setText(root, 'hold-narrative', composeHoldNarrative(state));
   setText(root, 'hold-used-drop-pct', fmtPercent(usedDropPct));
   setText(root, 'hold-allowed-drop-pct', fmtPercent(state.maxDropPct));
   setText(
@@ -372,6 +380,8 @@ export function render(root: HTMLElement, state: AppState): void {
   );
 
   setHoldStatusClass(root, hold?.status ?? null);
+  setHoldNarrativeClass(root, hold?.status ?? null);
+  setUploadNeedsFileClass(root, state);
 
   // Report section + export buttons
   renderReportSection(root, state);
@@ -601,7 +611,9 @@ function appendCell(tr: HTMLTableRowElement, text: string): void {
 }
 
 function composeManualValidationSummary(state: AppState): string {
-  if (state.manualRows.length === 0) return 'Ingen rader registrert.';
+  if (state.manualRows.length === 0) {
+    return 'Ingen rader registrert. Skriv inn én rad over, eller bruk «Lim inn fra paste».';
+  }
   const v = state.manualValidation;
   if (!v) return 'Ikke validert.';
 
@@ -626,13 +638,17 @@ function renderReportSection(root: HTMLElement, state: AppState): void {
   // Sync metadata inputs (don't trample on a field the user is currently editing).
   syncMetadataInputs(root, state);
 
-  // Preview / status fields
-  const ready =
+  // Preview / status fields. The export gate is intentionally narrow:
+  // as long as there is trykktest-data we let the operator export. Missing
+  // metadata is surfaced as an advisory in the status text, never as a
+  // disabled button — operators in the field must always be able to get
+  // a rapport out.
+  const hasData =
     state.parseResult !== null &&
     state.parseResult.rows.length > 0 &&
     state.baselineDrop !== null &&
     state.holdResult !== null;
-  setText(root, 'report-preview-status', ready ? 'Klar for eksport' : 'Ingen data lastet');
+  setText(root, 'report-preview-status', composeReportPreviewStatus(state, hasData));
   setText(root, 'report-result-status', state.holdResult?.status ?? '—');
   setText(root, 'report-selected-period', resolvePeriodSummary(state));
   setText(
@@ -642,11 +658,12 @@ function renderReportSection(root: HTMLElement, state: AppState): void {
   );
   setText(root, 'report-drop-summary', composeDropSummary(state));
 
-  // Toggle export buttons
+  // Toggle export buttons — enabled whenever data exists, regardless of
+  // metadata. Missing metadata only triggers the advisory message above.
   const csvBtn = root.querySelector<HTMLButtonElement>('[data-testid="export-csv-button"]');
   const pdfBtn = root.querySelector<HTMLButtonElement>('[data-testid="export-pdf-button"]');
-  if (csvBtn) csvBtn.disabled = !ready;
-  if (pdfBtn) pdfBtn.disabled = !ready;
+  if (csvBtn) csvBtn.disabled = !hasData;
+  if (pdfBtn) pdfBtn.disabled = !hasData;
 
   // Export status message
   const exp = state.exportStatus;
@@ -681,6 +698,36 @@ function syncMetadataInputs(root: HTMLElement, state: AppState): void {
       el.value = desired;
     }
   }
+}
+
+/**
+ * Advisory status text for the report preview area.
+ *
+ * Decision: never block export when data exists. The status is purely
+ * informational so the operator knows what to expect in the artifact:
+ *  - no data: a clear "missing data" message + buttons disabled
+ *  - data + UNKNOWN verdict: tell the operator the result is UNKNOWN so
+ *    they don't ship a misleading "PASS" assumption
+ *  - data + missing metadata: warn that the customer fields are still
+ *    blank (recommended but not required)
+ *  - everything: the original "Klar for eksport"
+ *
+ * Recommended metadata fields chosen by the operator (not enforced):
+ * customerName, projectNumber, location, testDate, operatorName,
+ * ihpuSerial, rovSystem.
+ */
+function composeReportPreviewStatus(state: AppState, hasData: boolean): string {
+  if (!hasData) {
+    return 'Mangler trykktest-data — last opp fil eller registrer manuelt.';
+  }
+  const status = state.holdResult?.status;
+  if (status === 'UNKNOWN') {
+    return 'Klar for eksport (resultat: UNKNOWN — sjekk meldinger nederst).';
+  }
+  if (!state.reportMetadata.customerName.trim()) {
+    return 'Klar — kundenavn anbefalt før eksport.';
+  }
+  return 'Klar for eksport.';
 }
 
 function composeDropSummary(state: AppState): string {
@@ -732,6 +779,117 @@ function setHoldStatusClass(root: HTMLElement, status: string | null): void {
   else el.classList.add('hold-unknown');
 }
 
+function setHoldNarrativeClass(root: HTMLElement, status: string | null): void {
+  const el = root.querySelector<HTMLElement>('[data-testid="hold-narrative"]');
+  if (!el) return;
+  el.classList.remove('hold-narrative-pass', 'hold-narrative-fail', 'hold-narrative-unknown');
+  if (status === 'PASS') el.classList.add('hold-narrative-pass');
+  else if (status === 'FAIL') el.classList.add('hold-narrative-fail');
+  else el.classList.add('hold-narrative-unknown');
+}
+
+/**
+ * Add a `needs-file` class to the upload section when the operator has
+ * just restored a file-mode session and must reselect the source. Pure
+ * styling hook — no behaviour change.
+ */
+function setUploadNeedsFileClass(root: HTMLElement, state: AppState): void {
+  const el = root.querySelector<HTMLElement>('[data-testid="upload-section"]');
+  if (!el) return;
+  if (state.sessionStatus.kind === 'restored_needs_file') {
+    el.classList.add('needs-file');
+  } else {
+    el.classList.remove('needs-file');
+  }
+}
+
+/**
+ * Build the hold-narrative sentence. Reads only existing `state.holdResult`
+ * fields — no domain re-derivation. Returns an empty-state hint when there
+ * is no evaluation yet (no parser data, missing criteria, …).
+ */
+function composeHoldNarrative(state: AppState): string {
+  const hold = state.holdResult;
+  if (!hold) {
+    if (!state.parseResult || state.parseResult.rows.length === 0) {
+      return 'Ingen evaluering ennå — last data og sett kriterier.';
+    }
+    return 'Ingen evaluering ennå — sett maxDropPct.';
+  }
+
+  const used = hold.drop.dropPct;
+  const allowed = state.maxDropPct;
+
+  if (hold.status === 'PASS') {
+    if (used === null || !Number.isFinite(used)) {
+      return `PASS — trykkfall under maks tillatt ${fmtPercentInline(allowed)}.`;
+    }
+    if (used < 0) {
+      // Negative drop = pressure rose during the period; auto-PASS.
+      return `PASS — trykket økte over perioden (${fmtPercentInline(used)}). Hold-kriterium ${fmtPercentInline(allowed)} er ikke i fare.`;
+    }
+    const margin = allowed - used;
+    return `PASS — trykkfall ${fmtPercentInline(used)} er under maks tillatt ${fmtPercentInline(allowed)} (margin ${fmtPercentInline(margin)}).`;
+  }
+
+  if (hold.status === 'FAIL') {
+    if (used === null || !Number.isFinite(used)) {
+      return `FAIL — trykkfall overstiger maks tillatt ${fmtPercentInline(allowed)}.`;
+    }
+    const overshoot = used - allowed;
+    return `FAIL — trykkfall ${fmtPercentInline(used)} overstiger maks tillatt ${fmtPercentInline(allowed)} (overskudd ${fmtPercentInline(overshoot)}).`;
+  }
+
+  // UNKNOWN — surface the most informative reason from holdResult.
+  return composeUnknownReason(state);
+}
+
+function composeUnknownReason(state: AppState): string {
+  const hold = state.holdResult;
+  // Pull the first error/warning code we recognise. Fallback to a generic.
+  const issues = [...(hold?.errors ?? []), ...(hold?.warnings ?? [])];
+  for (const issue of issues) {
+    switch (issue.code) {
+      case 'MISSING_CRITERIA':
+        return 'UNKNOWN — mangler maxDropPct. Sett kriteriet i Analyse-kontroller.';
+      case 'NO_VALID_ROWS':
+        return 'UNKNOWN — ingen gyldige rader i valgt periode.';
+      case 'INSUFFICIENT_POINTS':
+        return 'UNKNOWN — trenger minst 2 målepunkter for å beregne trykkfall.';
+      case 'ZERO_DURATION':
+        return 'UNKNOWN — perioden har 0 varighet (start- og sluttidspunkt er like).';
+      case 'INVALID_REFERENCE':
+        return 'UNKNOWN — referansetrykket er 0. Velg annet target eller la feltet stå tomt.';
+      case 'EMPTY_RANGE':
+        return 'UNKNOWN — ingen rader faller innenfor valgt periode. Juster Fra/Til.';
+      case 'CHANNEL_NOT_PRESENT':
+        return `UNKNOWN — kanal ${state.selectedChannel.toUpperCase()} mangler i datasettet. Bytt kanal.`;
+    }
+  }
+  return 'UNKNOWN — kan ikke evaluere. Sjekk data og kriterier.';
+}
+
+function fmtPercentInline(v: number | null | undefined): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+  return v.toFixed(2) + ' %';
+}
+
+/**
+ * Build the "hele logg" summary line: time range + total duration.
+ * When no parser data, returns an empty-state hint.
+ */
+function resolveFullLogSummary(state: AppState): string {
+  const pr = state.parseResult;
+  if (!pr || pr.rows.length === 0) return '—';
+  const first = pr.rows[0]!.timeText || pr.rows[0]!.localIso.slice(11);
+  const last =
+    pr.rows[pr.rows.length - 1]!.timeText ??
+    pr.rows[pr.rows.length - 1]!.localIso.slice(11);
+  const dur = pr.meta.durationMinutes;
+  const durStr = dur !== null && Number.isFinite(dur) ? ` (${dur.toFixed(1)} min)` : '';
+  return `${first} → ${last}${durStr}`;
+}
+
 function composeIssueSummary(state: AppState): string {
   const messages: string[] = [];
   if (state.userMessage) messages.push(state.userMessage.text);
@@ -756,7 +914,7 @@ function resolveChartStatus(state: AppState): string {
   if (state.chartError) return state.chartError;
   if (state.chartReady) return 'Klar';
   if (state.parseResult && state.parseResult.rows.length > 0) return 'Tegner …';
-  return 'Venter på data';
+  return 'Venter på data — last opp en logg eller bruk manuelle rader.';
 }
 
 function resolvePeriodSummary(state: AppState): string {
@@ -776,7 +934,22 @@ function resolvePeriodSummary(state: AppState): string {
 
   const fromText = fromMs !== null ? msToTimeText(fromMs) : 'start';
   const toText = toMs !== null ? msToTimeText(toMs) : 'slutt';
-  return `${fromText} → ${toText}`;
+
+  // Append "(D.D min, P % av loggen)" when we have both the selected
+  // duration and the full log duration to compute a percentage from.
+  // Pure read of existing analysis fields — no recomputation here.
+  const selectedDuration = state.baselineDrop?.durationMinutes ?? null;
+  const fullDuration = pr?.meta.durationMinutes ?? null;
+  let suffix = '';
+  if (selectedDuration !== null && Number.isFinite(selectedDuration)) {
+    suffix = ` (${selectedDuration.toFixed(1)} min`;
+    if (fullDuration !== null && Number.isFinite(fullDuration) && fullDuration > 0) {
+      const pct = (selectedDuration / fullDuration) * 100;
+      suffix += `, ${pct.toFixed(0)} % av loggen`;
+    }
+    suffix += ')';
+  }
+  return `${fromText} → ${toText}${suffix}`;
 }
 
 /**

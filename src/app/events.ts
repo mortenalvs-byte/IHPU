@@ -381,7 +381,7 @@ async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Pro
     ctx.chart.destroy();
     ctx.state.userMessage = {
       severity: 'error',
-      text: `Kunne ikke lese filen: ${err instanceof Error ? err.message : String(err)}`
+      text: `Kunne ikke lese «${file.name}»: ${err instanceof Error ? err.message : String(err)}. Sjekk at filen ikke er åpen i et annet program.`
     };
     commit(ctx);
     return;
@@ -396,7 +396,7 @@ async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Pro
     ctx.state.parseResult = null;
     ctx.state.userMessage = {
       severity: 'error',
-      text: `Uventet parser-feil: ${err instanceof Error ? err.message : String(err)}`
+      text: `Parser feilet på «${file.name}»: ${err instanceof Error ? err.message : String(err)}. Verifiser at filen er en gyldig IHPU-trykktest-logg.`
     };
   }
 
@@ -638,7 +638,8 @@ function handleOverlayRemove(ctx: AppContext, id: string): void {
   if (after === 0) {
     ctx.state.overlay.addStatus = {
       kind: 'idle',
-      message: 'Ingen sammenligningsfiler lastet ennå.'
+      message:
+        'Ingen sammenligningsfiler. Last opp én eller flere logger for å sammenligne mot aktiv analyse.'
     };
   } else if (after < before) {
     ctx.state.overlay.addStatus = {
@@ -681,12 +682,12 @@ function applyPeriodInputs(ctx: AppContext): void {
   const toMs = toText === '' ? null : timeTextToMsOnLogDate(toText, pr.rows);
 
   if (fromText !== '' && fromMs === null) {
-    ctx.state.chartError = `Ugyldig fra-tid: "${fromText}". Bruk HH:MM eller HH:MM:SS.`;
+    ctx.state.chartError = `Ugyldig fra-tid «${fromText}». Eksempel: 13:10:37 eller 13:10. La feltet stå tomt for å bruke logg-start.`;
     commit(ctx);
     return;
   }
   if (toText !== '' && toMs === null) {
-    ctx.state.chartError = `Ugyldig til-tid: "${toText}". Bruk HH:MM eller HH:MM:SS.`;
+    ctx.state.chartError = `Ugyldig til-tid «${toText}». Eksempel: 14:20:01 eller 14:20. La feltet stå tomt for å bruke logg-slutt.`;
     commit(ctx);
     return;
   }
@@ -1051,7 +1052,7 @@ async function handleImportSession(ctx: AppContext, input: HTMLInputElement): Pr
   } catch (err) {
     ctx.state.sessionStatus = {
       kind: 'error',
-      message: `Kunne ikke lese session-fil: ${err instanceof Error ? err.message : String(err)}`,
+      message: `Kunne ikke lese session-fil: ${err instanceof Error ? err.message : String(err)}. Sjekk at filen er en gyldig .json eksportert fra IHPU TrykkAnalyse.`,
       lastAutosaveAt: ctx.state.sessionStatus.lastAutosaveAt
     };
     render(ctx.root, ctx.state);
@@ -1062,7 +1063,7 @@ async function handleImportSession(ctx: AppContext, input: HTMLInputElement): Pr
   if (!parsed.ok) {
     ctx.state.sessionStatus = {
       kind: 'error',
-      message: `Ugyldig session-fil: ${parsed.error.message}`,
+      message: `Ugyldig session-fil: ${parsed.error.code} — ${parsed.error.message}. Forventet schema-versjon: 1.`,
       lastAutosaveAt: ctx.state.sessionStatus.lastAutosaveAt
     };
     render(ctx.root, ctx.state);

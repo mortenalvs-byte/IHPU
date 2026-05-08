@@ -201,6 +201,50 @@ html, body {
   background: rgba(138, 160, 184, 0.05);
 }
 
+.hold-narrative {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  border-left: 3px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--fg);
+}
+
+.hold-narrative.hold-narrative-pass {
+  border-left-color: var(--pass);
+  background: rgba(102, 227, 164, 0.05);
+}
+
+.hold-narrative.hold-narrative-fail {
+  border-left-color: var(--fail);
+  background: rgba(255, 107, 107, 0.05);
+}
+
+.hold-narrative.hold-narrative-unknown {
+  border-left-color: var(--unknown);
+  background: rgba(138, 160, 184, 0.04);
+  color: var(--muted);
+}
+
+.upload-section.needs-file {
+  border: 1px dashed var(--accent);
+  background: rgba(65, 216, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(65, 216, 255, 0.15);
+}
+
+.upload-section.needs-file::before {
+  content: '↓ Velg filen som ble brukt sist for å fortsette analysen';
+  display: block;
+  margin: -0.25rem 0 0.5rem;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.8rem;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+
 .issues-section [data-testid='issue-summary'] {
   margin: 0;
   font-family: 'Share Tech Mono', ui-monospace, monospace;
