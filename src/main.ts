@@ -1,7 +1,7 @@
 import './styles/app.css';
 import { PressureChart } from './charts/pressureChart';
-import { handleChartPeriodSelected, wireEvents } from './app/events';
-import { mountAppShell, render } from './app/render';
+import { handleChartPeriodSelected, restoreSessionOnStartup, wireEvents } from './app/events';
+import { mountAppShell } from './app/render';
 import { createState, type AppState } from './app/state';
 
 // Smoke-test source markers — these literal strings must remain in src/main.ts
@@ -45,4 +45,9 @@ const chart = new PressureChart(canvas, {
 ctx = { root, state, chart };
 
 wireEvents(ctx);
-render(root, state);
+
+// Try to restore the operator's last session from localStorage. Internally
+// runs `applyActiveSource(ctx)` so a manual-mode restore re-populates the
+// chart and analysis pipeline from the saved manual rows. Always renders
+// at the end — no separate render() call needed.
+restoreSessionOnStartup(ctx);

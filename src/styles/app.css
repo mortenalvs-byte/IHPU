@@ -557,3 +557,62 @@ html, body {
   gap: 0.6rem;
   flex-wrap: wrap;
 }
+
+.session-section .session-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+
+.session-section .session-actions button {
+  padding: 0.5rem 0.85rem;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.85rem;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+.session-section .session-actions button:hover {
+  background: rgba(65, 216, 255, 0.08);
+}
+
+.import-session-label {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.import-session-label input[type='file'] {
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+
+.session-status,
+.autosave-status,
+.session-dirty-indicator,
+.session-source-summary {
+  margin: 0.15rem 0;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.session-status {
+  color: var(--fg);
+}
+
+.autosave-status {
+  color: var(--accent);
+}
+
+.session-dirty-indicator {
+  color: var(--muted);
+}

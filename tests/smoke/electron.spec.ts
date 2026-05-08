@@ -18,7 +18,13 @@ test.describe('Electron app smoke', () => {
 
     try {
       const window = await electronApp.firstWindow();
+
       await window.waitForLoadState('domcontentloaded');
+
+      // Wipe any persisted session from a prior test run so this test starts
+      // from a known empty state (Electron shares its userData dir across
+      // launches, so localStorage persists across `electron.launch` calls).
+      await window.getByTestId('new-test-button').click();
 
       // Initial shell
       await expect(window).toHaveTitle(/IHPU TrykkAnalyse/);
@@ -79,6 +85,9 @@ test.describe('Electron app smoke', () => {
     try {
       const window = await electronApp.firstWindow();
       await window.waitForLoadState('domcontentloaded');
+
+      // Wipe any persisted session from a prior test run.
+      await window.getByTestId('new-test-button').click();
 
       // Initial state
       await expect(window.getByTestId('manual-entry-section')).toBeVisible();
@@ -150,6 +159,87 @@ test.describe('Electron app smoke', () => {
 
       await window.screenshot({
         path: path.join(screenshotDir, 'electron-manual-entry.png'),
+        fullPage: true
+      });
+    } finally {
+      await electronApp.close();
+    }
+  });
+
+  test('session flow: autosave + reload restores manual rows + new-test clears', async () => {
+    const appRoot = process.cwd();
+    const mainPath = path.join(appRoot, 'dist-electron', 'main.js');
+    const screenshotDir = path.join(appRoot, 'test-results');
+    fs.mkdirSync(screenshotDir, { recursive: true });
+
+    const electronApp = await electron.launch({
+      args: [mainPath],
+      cwd: appRoot,
+      env: { ...process.env, IHPU_FORCE_PROD: '1', VITE_DEV_SERVER_URL: '' }
+    });
+
+    try {
+      const window = await electronApp.firstWindow();
+      await window.waitForLoadState('domcontentloaded');
+
+      // Start clean by clicking "Ny test" so any prior persisted session
+      // (from the manual-flow test running just before) is wiped.
+      await window.getByTestId('new-test-button').click();
+      await expect(window.getByTestId('session-status')).toContainText('Ny test');
+      await expect(window.getByTestId('manual-row-count')).toHaveText('0');
+
+      // Add three manual rows + fill metadata + criteria.
+      const rows = [
+        { date: '21.02.2026', time: '13:00:00', p1: '-2.96', p2: '320.00' },
+        { date: '21.02.2026', time: '13:30:00', p1: '-2.95', p2: '305.00' },
+        { date: '21.02.2026', time: '14:00:00', p1: '-2.94', p2: '290.00' }
+      ];
+      for (const row of rows) {
+        await window.getByTestId('manual-date-input').fill(row.date);
+        await window.getByTestId('manual-time-input').fill(row.time);
+        await window.getByTestId('manual-p1-input').fill(row.p1);
+        await window.getByTestId('manual-p2-input').fill(row.p2);
+        await window.getByTestId('manual-add-row-button').click();
+      }
+      await expect(window.getByTestId('manual-row-count')).toHaveText('3');
+
+      await window.getByTestId('manual-use-rows-button').click();
+      await expect(window.getByTestId('parsed-row-count')).toHaveText('3');
+
+      await window.getByTestId('report-customer-input').fill('Session Customer AS');
+      await window.getByTestId('report-project-input').fill('PRJ-SESS');
+      await window.getByTestId('max-drop-input').fill('7');
+      await window.getByTestId('target-pressure-input').fill('325');
+
+      // Autosave should have fired by now.
+      await expect(window.getByTestId('session-status')).toContainText('Lagret');
+      await expect(window.getByTestId('autosave-status')).toContainText('Sist lagret');
+
+      // ----- Reload the renderer; localStorage persists for same origin -----
+      await window.reload();
+      await window.waitForLoadState('domcontentloaded');
+
+      // After reload: restoreSessionOnStartup runs and the manual rows + metadata
+      // come back. The chart re-mounts because manual mode rebuilt parseResult.
+      await expect(window.getByTestId('session-status')).toContainText('gjenopprettet');
+      await expect(window.getByTestId('manual-row-count')).toHaveText('3');
+      await expect(window.getByTestId('parsed-row-count')).toHaveText('3');
+      await expect(window.getByTestId('report-customer-input')).toHaveValue('Session Customer AS');
+      await expect(window.getByTestId('report-project-input')).toHaveValue('PRJ-SESS');
+      await expect(window.getByTestId('max-drop-input')).toHaveValue('7');
+      await expect(window.getByTestId('target-pressure-input')).toHaveValue('325');
+      await expect(window.getByTestId('chart-status')).toContainText('Klar');
+
+      // ----- New test wipes everything -----
+      await window.getByTestId('new-test-button').click();
+      await expect(window.getByTestId('session-status')).toContainText('Ny test');
+      await expect(window.getByTestId('manual-row-count')).toHaveText('0');
+      await expect(window.getByTestId('parsed-row-count')).toHaveText('—');
+      await expect(window.getByTestId('report-customer-input')).toHaveValue('');
+      await expect(window.getByTestId('max-drop-input')).toHaveValue('5');
+
+      await window.screenshot({
+        path: path.join(screenshotDir, 'electron-session-flow.png'),
         fullPage: true
       });
     } finally {
