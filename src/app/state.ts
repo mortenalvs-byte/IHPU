@@ -9,6 +9,7 @@ import type {
   ManualRow,
   ManualValidationResult
 } from '../manual/manualTypes';
+import type { OverlayEntry } from '../domain/overlay';
 import { createDefaultMetadata, type ReportMetadata } from '../reports/reportTypes';
 import type {
   HoldPeriodResult,
@@ -80,6 +81,24 @@ export interface AppState {
   /** Stable session id and creation timestamp, kept across autosave so exports stay correlated. */
   sessionId: string | null;
   sessionCreatedAtIso: string | null;
+  /**
+   * Multi-file comparison set. Additive only — never feeds the primary
+   * `parseResult` / `baselineDrop` / `holdResult`. Comparison entries are
+   * presented side-by-side via `computeOverlayComparison(entries, criteria)`.
+   */
+  overlay: OverlayState;
+}
+
+export type OverlayAddStatusKind = 'idle' | 'success' | 'warning' | 'error';
+
+export interface OverlayAddStatus {
+  kind: OverlayAddStatusKind;
+  message: string;
+}
+
+export interface OverlayState {
+  entries: OverlayEntry[];
+  addStatus: OverlayAddStatus;
 }
 
 export type SessionStatusKind =
@@ -134,6 +153,10 @@ export function createState(): AppState {
     manualValidation: null,
     sessionStatus: { kind: 'idle', message: 'Ingen lagret økt.', lastAutosaveAt: null },
     sessionId: null,
-    sessionCreatedAtIso: null
+    sessionCreatedAtIso: null,
+    overlay: {
+      entries: [],
+      addStatus: { kind: 'idle', message: 'Ingen sammenligningsfiler lastet ennå.' }
+    }
   };
 }
