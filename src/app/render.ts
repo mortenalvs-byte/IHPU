@@ -28,6 +28,22 @@ export function mountAppShell(root: HTMLElement, markers: AppShellMarkers): void
     <main class="app-main">
       <p class="app-ready" data-testid="app-ready">${escapeForStaticTemplate(markers.appReady)}</p>
 
+      <section class="card session-section" data-testid="session-section">
+        <h2>Test-økt</h2>
+        <div class="session-actions">
+          <button type="button" data-testid="new-test-button">Ny test</button>
+          <button type="button" data-testid="export-session-button">Eksporter session</button>
+          <label class="import-session-label">
+            <input type="file" accept="application/json,.json" data-testid="import-session-input" />
+            <span>Importer session</span>
+          </label>
+        </div>
+        <p class="session-status" data-testid="session-status">Ingen lagret økt.</p>
+        <p class="autosave-status" data-testid="autosave-status">Aldri lagret</p>
+        <p class="session-dirty-indicator" data-testid="session-dirty-indicator">—</p>
+        <p class="session-source-summary" data-testid="session-source-summary">—</p>
+      </section>
+
       <section class="card data-source-section">
         <h2>Datakilde</h2>
         <div class="data-source-mode" data-testid="data-source-mode">
@@ -297,6 +313,7 @@ export function render(root: HTMLElement, state: AppState): void {
   setText(root, 'selected-period-end-pressure', fmtPressure(drop?.endPressure ?? null));
 
   syncPeriodInputs(root, state);
+  syncControlInputs(root, state);
 
   // Hold result
   const hold = state.holdResult;
@@ -318,8 +335,71 @@ export function render(root: HTMLElement, state: AppState): void {
   // Manual entry section (radios + table + validation summary)
   renderManualSection(root, state);
 
+  // Session section (autosave + restore + new/import/export status)
+  renderSessionSection(root, state);
+
   // Issues
   setText(root, 'issue-summary', composeIssueSummary(state));
+}
+
+function renderSessionSection(root: HTMLElement, state: AppState): void {
+  setText(root, 'session-status', state.sessionStatus.message);
+
+  if (state.sessionStatus.lastAutosaveAt) {
+    const ts = new Date(state.sessionStatus.lastAutosaveAt);
+    const hh = String(ts.getHours()).padStart(2, '0');
+    const mm = String(ts.getMinutes()).padStart(2, '0');
+    const ss = String(ts.getSeconds()).padStart(2, '0');
+    setText(root, 'autosave-status', `Sist lagret kl ${hh}:${mm}:${ss}`);
+  } else {
+    setText(root, 'autosave-status', 'Aldri lagret');
+  }
+
+  // Dirty indicator: a small mark when state diverges from the persisted
+  // baseline. Since `commit` autosaves synchronously after every state
+  // change, in steady-state we render "Synkronisert"; on storage failure or
+  // before any save we render "Ulagret".
+  let dirtyText = '—';
+  switch (state.sessionStatus.kind) {
+    case 'saved':
+    case 'restored':
+    case 'imported':
+      dirtyText = 'Synkronisert';
+      break;
+    case 'restored_needs_file':
+      dirtyText = 'Velg fil for å fortsette';
+      break;
+    case 'cleared':
+      dirtyText = 'Ny test — ingen data';
+      break;
+    case 'unavailable':
+      dirtyText = 'Autosave deaktivert';
+      break;
+    case 'error':
+      dirtyText = 'Lagring feilet';
+      break;
+    case 'idle':
+      dirtyText = state.sessionStatus.lastAutosaveAt ? 'Synkronisert' : 'Ulagret';
+      break;
+  }
+  setText(root, 'session-dirty-indicator', dirtyText);
+
+  const sourceSummary = composeSessionSourceSummary(state);
+  setText(root, 'session-source-summary', sourceSummary);
+}
+
+function composeSessionSourceSummary(state: AppState): string {
+  const parts: string[] = [];
+  parts.push(state.sourceMode === 'manual' ? 'Manuell' : 'Fil');
+  if (state.selectedFileName) parts.push(state.selectedFileName);
+  if (state.parseResult) {
+    parts.push(`${state.parseResult.meta.parsedRows} rader`);
+  } else if (state.sourceMode === 'manual' && state.manualRows.length > 0) {
+    parts.push(`${state.manualRows.length} manuelle rader (urørt)`);
+  } else {
+    parts.push('ingen data');
+  }
+  return parts.join(' · ');
 }
 
 function renderManualSection(root: HTMLElement, state: AppState): void {
@@ -546,6 +626,32 @@ function resolvePeriodSummary(state: AppState): string {
   const fromText = fromMs !== null ? msToTimeText(fromMs) : 'start';
   const toText = toMs !== null ? msToTimeText(toMs) : 'slutt';
   return `${fromText} → ${toText}`;
+}
+
+/**
+ * Sync the channel select, max-drop input, and target-pressure input from
+ * state. Required after a restore (state changes but the input DOM was
+ * initialised at mount time and only kept in sync via change events).
+ */
+function syncControlInputs(root: HTMLElement, state: AppState): void {
+  const channelSelect = root.querySelector<HTMLSelectElement>('[data-testid="channel-select"]');
+  if (channelSelect && document.activeElement !== channelSelect) {
+    if (channelSelect.value !== state.selectedChannel) {
+      channelSelect.value = state.selectedChannel;
+    }
+  }
+
+  const maxDropInput = root.querySelector<HTMLInputElement>('[data-testid="max-drop-input"]');
+  if (maxDropInput && document.activeElement !== maxDropInput) {
+    const desired = String(state.maxDropPct);
+    if (maxDropInput.value !== desired) maxDropInput.value = desired;
+  }
+
+  const targetInput = root.querySelector<HTMLInputElement>('[data-testid="target-pressure-input"]');
+  if (targetInput && document.activeElement !== targetInput) {
+    const desired = state.targetPressure === null ? '' : String(state.targetPressure);
+    if (targetInput.value !== desired) targetInput.value = desired;
+  }
 }
 
 function syncPeriodInputs(root: HTMLElement, state: AppState): void {

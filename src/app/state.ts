@@ -75,6 +75,28 @@ export interface AppState {
   manualRows: ManualRow[];
   /** Live validation summary of manualRows. Recomputed on every edit. */
   manualValidation: ManualValidationResult | null;
+  /** Test-session autosave + restore status, surfaced in the UI. */
+  sessionStatus: SessionStatus;
+  /** Stable session id and creation timestamp, kept across autosave so exports stay correlated. */
+  sessionId: string | null;
+  sessionCreatedAtIso: string | null;
+}
+
+export type SessionStatusKind =
+  | 'idle'
+  | 'saved'
+  | 'restored'
+  | 'restored_needs_file'
+  | 'imported'
+  | 'cleared'
+  | 'unavailable'
+  | 'error';
+
+export interface SessionStatus {
+  kind: SessionStatusKind;
+  message: string;
+  /** ISO timestamp of the latest autosave; null when never saved. */
+  lastAutosaveAt: string | null;
 }
 
 export type ExportStatusKind = 'idle' | 'success' | 'error';
@@ -109,6 +131,9 @@ export function createState(): AppState {
     sourceMode: 'file',
     fileParseResult: null,
     manualRows: [],
-    manualValidation: null
+    manualValidation: null,
+    sessionStatus: { kind: 'idle', message: 'Ingen lagret økt.', lastAutosaveAt: null },
+    sessionId: null,
+    sessionCreatedAtIso: null
   };
 }

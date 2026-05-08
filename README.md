@@ -176,6 +176,22 @@ operator can switch back and forth without re-uploading or re-typing.
 
 See [docs/development/manual-entry-and-validation.md](docs/development/manual-entry-and-validation.md).
 
+## Test session workflow
+
+The "Test-økt" card at the top of the app autosaves the operator's working
+context (source mode, channel, period, criteria, metadata, manual rows) to
+`localStorage` on every change, restores it on startup, and supports
+`Ny test` (full reset), `Eksporter session` (JSON download), and
+`Importer session` (JSON file picker). Versioned schema, hand-rolled
+validation — bad localStorage data is auto-cleared, never crashes the app.
+
+Raw uploaded file content is **not** persisted — only the filename + parser
+summary. After a restart the operator sees "Sist økt gjenopprettet — velg
+<filename> på nytt for å fortsette analysen." and reselects the file. Manual
+rows round-trip in full because they originated as operator input.
+
+See [docs/development/test-session-workflow-and-persistence.md](docs/development/test-session-workflow-and-persistence.md).
+
 ## Migration roadmap
 
 1. ~~Bootstrap structure~~ (done)
@@ -186,7 +202,7 @@ See [docs/development/manual-entry-and-validation.md](docs/development/manual-en
 6. ~~Chart + period selection~~ (done)
 7. ~~CSV / PDF report export foundation~~ (done)
 8. ~~Manual data entry + validation~~ (done)
-9. Test-session workflow + project persistence (autosave, restore, JSON import/export)
+9. ~~Test-session workflow + project persistence~~ (done)
 10. Multi-file overlay / comparison
 11. Report polish + chart image in PDF
 12. Windows installer + ICO + code-sign + release packaging

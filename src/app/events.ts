@@ -23,8 +23,21 @@ import {
 } from '../reports/csvExport';
 import { buildCustomerReportPdf, triggerPdfDownload } from '../reports/pdfReport';
 import { buildReportModel } from '../reports/reportModel';
-import type { ReportMetadata } from '../reports/reportTypes';
+import { createDefaultMetadata, type ReportMetadata } from '../reports/reportTypes';
+import {
+  buildTestSession,
+  deriveRestoredFields,
+  describeRestoreOutcome,
+  parseTestSessionJson,
+  serializeTestSession
+} from '../session/sessionModel';
+import {
+  clearLastSession,
+  loadLastSession,
+  saveLastSession
+} from '../session/sessionStorage';
 import { parseTimeParts, toDeterministicTimestampMs } from '../utils/dateTime';
+import { createState } from './state';
 import { msToTimeText, render } from './render';
 import type { AppState } from './state';
 
@@ -57,7 +70,7 @@ export function wireEvents(ctx: AppContext): void {
       if (v === 'p1' || v === 'p2') {
         ctx.state.selectedChannel = v as PressureChannel;
         recomputeAnalysis(ctx);
-        render(ctx.root, ctx.state);
+        commit(ctx);
       }
     });
   }
@@ -69,7 +82,7 @@ export function wireEvents(ctx: AppContext): void {
       if (Number.isFinite(n) && n >= 0) {
         ctx.state.maxDropPct = n;
         recomputeAnalysis(ctx);
-        render(ctx.root, ctx.state);
+        commit(ctx);
       }
     });
   }
@@ -84,7 +97,7 @@ export function wireEvents(ctx: AppContext): void {
         ctx.state.targetPressure = Number.isFinite(n) ? n : null;
       }
       recomputeAnalysis(ctx);
-      render(ctx.root, ctx.state);
+      commit(ctx);
     });
   }
 
@@ -111,7 +124,7 @@ export function wireEvents(ctx: AppContext): void {
       ctx.state.chartError = null;
       ctx.chart.setSelectedRange(null);
       recomputeAnalysis(ctx);
-      render(ctx.root, ctx.state);
+      commit(ctx);
     });
   }
 
@@ -140,7 +153,7 @@ export function wireEvents(ctx: AppContext): void {
         ...ctx.state.reportMetadata,
         [key]: input.value
       };
-      render(ctx.root, ctx.state);
+      commit(ctx);
     });
   }
 
@@ -205,6 +218,22 @@ export function wireEvents(ctx: AppContext): void {
       handleManualDelete(ctx, rowId);
     });
   }
+
+  // Session controls
+  const newTestBtn = qs<HTMLButtonElement>(ctx.root, 'new-test-button');
+  if (newTestBtn) {
+    newTestBtn.addEventListener('click', () => handleNewTest(ctx));
+  }
+  const exportSessionBtn = qs<HTMLButtonElement>(ctx.root, 'export-session-button');
+  if (exportSessionBtn) {
+    exportSessionBtn.addEventListener('click', () => handleExportSession(ctx));
+  }
+  const importSessionInput = qs<HTMLInputElement>(ctx.root, 'import-session-input');
+  if (importSessionInput) {
+    importSessionInput.addEventListener('change', () => {
+      void handleImportSession(ctx, importSessionInput);
+    });
+  }
 }
 
 function handleExportCsv(ctx: AppContext): void {
@@ -225,7 +254,7 @@ function handleExportCsv(ctx: AppContext): void {
   });
   if (!result.ok) {
     ctx.state.exportStatus = { kind: 'error', message: `CSV-eksport feilet: ${result.error.message}` };
-    render(ctx.root, ctx.state);
+    commit(ctx);
     return;
   }
   try {
@@ -244,7 +273,7 @@ function handleExportCsv(ctx: AppContext): void {
       message: `CSV-eksport feilet: ${err instanceof Error ? err.message : String(err)}`
     };
   }
-  render(ctx.root, ctx.state);
+  commit(ctx);
 }
 
 function handleExportPdf(ctx: AppContext): void {
@@ -265,7 +294,7 @@ function handleExportPdf(ctx: AppContext): void {
   });
   if (!result.ok) {
     ctx.state.exportStatus = { kind: 'error', message: `PDF-eksport feilet: ${result.error.message}` };
-    render(ctx.root, ctx.state);
+    commit(ctx);
     return;
   }
   try {
@@ -282,12 +311,13 @@ function handleExportPdf(ctx: AppContext): void {
       message: `PDF-eksport feilet: ${err instanceof Error ? err.message : String(err)}`
     };
   }
-  render(ctx.root, ctx.state);
+  commit(ctx);
 }
 
 async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Promise<void> {
   const file = input.files && input.files[0];
   if (!file) return;
+  void input;
 
   ctx.state.userMessage = null;
   ctx.state.chartError = null;
@@ -316,7 +346,7 @@ async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Pro
       severity: 'error',
       text: `Kunne ikke lese filen: ${err instanceof Error ? err.message : String(err)}`
     };
-    render(ctx.root, ctx.state);
+    commit(ctx);
     return;
   }
 
@@ -334,7 +364,7 @@ async function handleFileSelected(ctx: AppContext, input: HTMLInputElement): Pro
   }
 
   applyActiveSource(ctx);
-  render(ctx.root, ctx.state);
+  commit(ctx);
 }
 
 /**
@@ -399,7 +429,7 @@ function handleSourceModeChange(ctx: AppContext, mode: DataSourceMode): void {
   if (ctx.state.sourceMode === mode) return;
   ctx.state.sourceMode = mode;
   applyActiveSource(ctx);
-  render(ctx.root, ctx.state);
+  commit(ctx);
 }
 
 function handleManualRowAdd(ctx: AppContext): void {
@@ -424,7 +454,7 @@ function handleManualRowAdd(ctx: AppContext): void {
   p2Input.value = '';
 
   recomputeManualValidation(ctx);
-  render(ctx.root, ctx.state);
+  commit(ctx);
 }
 
 function handleManualPaste(ctx: AppContext): void {
@@ -447,7 +477,7 @@ function handleManualPaste(ctx: AppContext): void {
     text: `Lim inn fullført: ${outcome.imported} importert, ${outcome.rejected} avvist.`
   };
 
-  render(ctx.root, ctx.state);
+  commit(ctx);
 }
 
 function handleManualDelete(ctx: AppContext, rowId: string): void {
@@ -459,7 +489,7 @@ function handleManualDelete(ctx: AppContext, rowId: string): void {
     applyActiveSource(ctx);
   }
 
-  render(ctx.root, ctx.state);
+  commit(ctx);
 }
 
 function handleManualClear(ctx: AppContext): void {
@@ -468,14 +498,14 @@ function handleManualClear(ctx: AppContext): void {
   if (ctx.state.sourceMode === 'manual') {
     applyActiveSource(ctx);
   }
-  render(ctx.root, ctx.state);
+  commit(ctx);
 }
 
 function handleUseManualRows(ctx: AppContext): void {
   recomputeManualValidation(ctx);
   ctx.state.sourceMode = 'manual';
   applyActiveSource(ctx);
-  render(ctx.root, ctx.state);
+  commit(ctx);
 }
 
 function applyPeriodInputs(ctx: AppContext): void {
@@ -492,12 +522,12 @@ function applyPeriodInputs(ctx: AppContext): void {
 
   if (fromText !== '' && fromMs === null) {
     ctx.state.chartError = `Ugyldig fra-tid: "${fromText}". Bruk HH:MM eller HH:MM:SS.`;
-    render(ctx.root, ctx.state);
+    commit(ctx);
     return;
   }
   if (toText !== '' && toMs === null) {
     ctx.state.chartError = `Ugyldig til-tid: "${toText}". Bruk HH:MM eller HH:MM:SS.`;
-    render(ctx.root, ctx.state);
+    commit(ctx);
     return;
   }
 
@@ -514,7 +544,7 @@ function applyPeriodInputs(ctx: AppContext): void {
   ctx.state.selectedToTimestampMs = normTo;
   updateChartHighlight(ctx);
   recomputeAnalysis(ctx);
-  render(ctx.root, ctx.state);
+  commit(ctx);
 }
 
 /**
@@ -528,7 +558,7 @@ export function handleChartPeriodSelected(ctx: AppContext, range: SelectedRange)
   ctx.state.chartError = null;
   ctx.chart.setSelectedRange({ fromMs: range.fromMs, toMs: range.toMs });
   recomputeAnalysis(ctx);
-  render(ctx.root, ctx.state);
+  commit(ctx);
 }
 
 function updateChartHighlight(ctx: AppContext): void {
@@ -601,4 +631,344 @@ function timeTextToMsOnLogDate(timeText: string, rows: PressureRow[]): number | 
 
 function qs<T extends HTMLElement>(root: HTMLElement, testId: string): T | null {
   return root.querySelector<T>(`[data-testid="${testId}"]`);
+}
+
+/**
+ * Persist + render. Used after any handler that mutates persistable state.
+ * Functions that need to control sessionStatus themselves (restore, import,
+ * new-test, export) call `render(ctx.root, ctx.state)` directly instead.
+ */
+function commit(ctx: AppContext): void {
+  autosave(ctx.state);
+  render(ctx.root, ctx.state);
+}
+
+// ---------- session autosave + handlers ----------
+
+/**
+ * Persist the current state slice to localStorage and update sessionStatus
+ * accordingly. Best-effort: storage failures degrade to an `unavailable` /
+ * `error` status but never throw.
+ *
+ * Pass `{ silent: true }` to persist without overwriting `sessionStatus` —
+ * useful right after the caller has set its own message (import, restore,
+ * etc.) and wants the persistence to happen without a follow-up "Lagret"
+ * label clobbering the message.
+ */
+function autosave(state: AppState, options?: { silent?: boolean }): void {
+  const session = buildTestSession({
+    sourceMode: state.sourceMode,
+    sourceName: state.selectedFileName,
+    parsedRows: state.parseResult?.meta.parsedRows ?? null,
+    warnings: state.parseResult?.warnings.length ?? null,
+    errors: state.parseResult?.errors.length ?? null,
+    selectedChannel: state.selectedChannel,
+    selectedFromTimestampMs: state.selectedFromTimestampMs,
+    selectedToTimestampMs: state.selectedToTimestampMs,
+    selectedFromTimeText: state.selectedFromTimeText,
+    selectedToTimeText: state.selectedToTimeText,
+    maxDropPct: state.maxDropPct,
+    targetPressure: state.targetPressure,
+    reportMetadata: state.reportMetadata,
+    manualRows: state.manualRows,
+    previousSessionId: state.sessionId ?? undefined,
+    previousCreatedAtIso: state.sessionCreatedAtIso ?? undefined
+  });
+
+  // Lock in the stable id/createdAt for subsequent autosaves.
+  state.sessionId = session.sessionId;
+  state.sessionCreatedAtIso = session.createdAtIso;
+
+  const result = saveLastSession(session);
+  if (options?.silent === true) return;
+
+  if (result.ok) {
+    const now = new Date();
+    state.sessionStatus = {
+      kind: 'saved',
+      message: `Lagret kl ${formatTimeOnly(now)}`,
+      lastAutosaveAt: now.toISOString()
+    };
+  } else if (result.reason === 'STORAGE_UNAVAILABLE') {
+    state.sessionStatus = {
+      kind: 'unavailable',
+      message: result.message ?? 'Autosave er deaktivert.',
+      lastAutosaveAt: state.sessionStatus.lastAutosaveAt
+    };
+  } else {
+    state.sessionStatus = {
+      kind: 'error',
+      message: result.message ?? 'Autosave feilet.',
+      lastAutosaveAt: state.sessionStatus.lastAutosaveAt
+    };
+  }
+}
+
+function formatTimeOnly(d: Date): string {
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+/**
+ * Try to restore the last session from localStorage. Called once at
+ * startup from main.ts. Updates state in place and runs `applyActiveSource`
+ * so the restored manual rows (if any) re-populate the analysis pipeline.
+ */
+export function restoreSessionOnStartup(ctx: AppContext): void {
+  const result = loadLastSession();
+  if (!result.ok) {
+    if (result.reason === 'NOT_FOUND') {
+      ctx.state.sessionStatus = {
+        kind: 'idle',
+        message: 'Ingen lagret økt funnet.',
+        lastAutosaveAt: null
+      };
+    } else if (result.reason === 'STORAGE_UNAVAILABLE') {
+      ctx.state.sessionStatus = {
+        kind: 'unavailable',
+        message: result.message,
+        lastAutosaveAt: null
+      };
+    } else if (result.reason === 'INVALID') {
+      ctx.state.sessionStatus = {
+        kind: 'error',
+        message: `Lagret økt var ugyldig: ${result.error.message}`,
+        lastAutosaveAt: null
+      };
+      // Wipe the corrupt slot so the operator gets a clean autosave next time.
+      clearLastSession();
+    }
+    applyActiveSource(ctx);
+    render(ctx.root, ctx.state);
+    return;
+  }
+
+  const session = result.session;
+  const fields = deriveRestoredFields(session);
+
+  ctx.state.sessionId = fields.sessionId;
+  ctx.state.sessionCreatedAtIso = fields.createdAtIso;
+  ctx.state.sourceMode = fields.sourceMode;
+  ctx.state.selectedChannel = fields.selectedChannel;
+  ctx.state.selectedFromTimestampMs = fields.selectedFromTimestampMs;
+  ctx.state.selectedToTimestampMs = fields.selectedToTimestampMs;
+  ctx.state.selectedFromTimeText = fields.selectedFromTimeText;
+  ctx.state.selectedToTimeText = fields.selectedToTimeText;
+  ctx.state.maxDropPct = fields.maxDropPct;
+  ctx.state.targetPressure = fields.targetPressure;
+  ctx.state.reportMetadata = fields.reportMetadata;
+  ctx.state.manualRows = fields.manualRows;
+  ctx.state.selectedFileName = fields.selectedFileName;
+  recomputeManualValidation(ctx);
+
+  // For file mode there is no rehydratable parseResult — operator must
+  // reselect the source. For manual mode, applyActiveSource will rebuild
+  // ParseResult from manualRows.
+  ctx.state.fileParseResult = null;
+  ctx.state.parseResult = null;
+
+  applyActiveSource(ctx);
+
+  const outcome = describeRestoreOutcome(session);
+  ctx.state.sessionStatus = {
+    kind: outcome.kind === 'restored_file_needs_reselect' ? 'restored_needs_file' : 'restored',
+    message: outcome.message,
+    lastAutosaveAt: session.updatedAtIso
+  };
+
+  render(ctx.root, ctx.state);
+}
+
+/**
+ * "Ny test" — clears every operator-facing field and the persistent slot,
+ * then re-renders.
+ */
+function handleNewTest(ctx: AppContext): void {
+  // Build a fresh state object and copy fields over so the existing context
+  // reference remains valid (events.ts handlers, the chart instance, etc.).
+  const fresh = createState();
+  ctx.state.selectedFileName = fresh.selectedFileName;
+  ctx.state.parseResult = fresh.parseResult;
+  ctx.state.fileParseResult = fresh.fileParseResult;
+  ctx.state.selectedChannel = fresh.selectedChannel;
+  ctx.state.maxDropPct = fresh.maxDropPct;
+  ctx.state.targetPressure = fresh.targetPressure;
+  ctx.state.selectedFromTimestampMs = fresh.selectedFromTimestampMs;
+  ctx.state.selectedToTimestampMs = fresh.selectedToTimestampMs;
+  ctx.state.selectedFromTimeText = fresh.selectedFromTimeText;
+  ctx.state.selectedToTimeText = fresh.selectedToTimeText;
+  ctx.state.chartReady = fresh.chartReady;
+  ctx.state.chartError = fresh.chartError;
+  ctx.state.baselineDrop = fresh.baselineDrop;
+  ctx.state.targetDrop = fresh.targetDrop;
+  ctx.state.holdResult = fresh.holdResult;
+  ctx.state.userMessage = fresh.userMessage;
+  ctx.state.reportMetadata = createDefaultMetadata();
+  ctx.state.exportStatus = fresh.exportStatus;
+  ctx.state.sourceMode = fresh.sourceMode;
+  ctx.state.manualRows = fresh.manualRows;
+  ctx.state.manualValidation = fresh.manualValidation;
+  ctx.state.sessionId = null;
+  ctx.state.sessionCreatedAtIso = null;
+
+  ctx.chart.destroy();
+  ctx.chart.setSelectedRange(null);
+
+  // Clear the file input element value so the same file can be re-uploaded later.
+  const fileInput = qs<HTMLInputElement>(ctx.root, 'file-input');
+  if (fileInput) fileInput.value = '';
+
+  clearLastSession();
+  ctx.state.sessionStatus = {
+    kind: 'cleared',
+    message: 'Ny test startet — alle felt er tilbakestilt.',
+    lastAutosaveAt: null
+  };
+  render(ctx.root, ctx.state);
+}
+
+function handleExportSession(ctx: AppContext): void {
+  // Build the latest snapshot (does not need to be persisted yet).
+  const session = buildTestSession({
+    sourceMode: ctx.state.sourceMode,
+    sourceName: ctx.state.selectedFileName,
+    parsedRows: ctx.state.parseResult?.meta.parsedRows ?? null,
+    warnings: ctx.state.parseResult?.warnings.length ?? null,
+    errors: ctx.state.parseResult?.errors.length ?? null,
+    selectedChannel: ctx.state.selectedChannel,
+    selectedFromTimestampMs: ctx.state.selectedFromTimestampMs,
+    selectedToTimestampMs: ctx.state.selectedToTimestampMs,
+    selectedFromTimeText: ctx.state.selectedFromTimeText,
+    selectedToTimeText: ctx.state.selectedToTimeText,
+    maxDropPct: ctx.state.maxDropPct,
+    targetPressure: ctx.state.targetPressure,
+    reportMetadata: ctx.state.reportMetadata,
+    manualRows: ctx.state.manualRows,
+    previousSessionId: ctx.state.sessionId ?? undefined,
+    previousCreatedAtIso: ctx.state.sessionCreatedAtIso ?? undefined
+  });
+
+  if (typeof document === 'undefined') {
+    ctx.state.sessionStatus = {
+      kind: 'error',
+      message: 'Eksport krever DOM-tilgang.',
+      lastAutosaveAt: ctx.state.sessionStatus.lastAutosaveAt
+    };
+    render(ctx.root, ctx.state);
+    return;
+  }
+
+  try {
+    const text = serializeTestSession(session);
+    const filename = buildSessionFilename(session.sessionId);
+    const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+    triggerBlobDownload(blob, filename);
+    const sizeBytes = new TextEncoder().encode(text).length;
+    ctx.state.sessionStatus = {
+      kind: 'saved',
+      message: `Session exported: ${filename} (${sizeBytes} bytes)`,
+      lastAutosaveAt: new Date().toISOString()
+    };
+  } catch (err) {
+    ctx.state.sessionStatus = {
+      kind: 'error',
+      message: `Eksport feilet: ${err instanceof Error ? err.message : String(err)}`,
+      lastAutosaveAt: ctx.state.sessionStatus.lastAutosaveAt
+    };
+  }
+  render(ctx.root, ctx.state);
+}
+
+async function handleImportSession(ctx: AppContext, input: HTMLInputElement): Promise<void> {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  let text: string;
+  try {
+    text = await file.text();
+  } catch (err) {
+    ctx.state.sessionStatus = {
+      kind: 'error',
+      message: `Kunne ikke lese session-fil: ${err instanceof Error ? err.message : String(err)}`,
+      lastAutosaveAt: ctx.state.sessionStatus.lastAutosaveAt
+    };
+    render(ctx.root, ctx.state);
+    return;
+  }
+
+  const parsed = parseTestSessionJson(text);
+  if (!parsed.ok) {
+    ctx.state.sessionStatus = {
+      kind: 'error',
+      message: `Ugyldig session-fil: ${parsed.error.message}`,
+      lastAutosaveAt: ctx.state.sessionStatus.lastAutosaveAt
+    };
+    render(ctx.root, ctx.state);
+    // Reset the input so the same file can be retried after fix.
+    input.value = '';
+    return;
+  }
+
+  const session = parsed.session;
+  const fields = deriveRestoredFields(session);
+
+  ctx.state.sessionId = fields.sessionId;
+  ctx.state.sessionCreatedAtIso = fields.createdAtIso;
+  ctx.state.sourceMode = fields.sourceMode;
+  ctx.state.selectedChannel = fields.selectedChannel;
+  ctx.state.selectedFromTimestampMs = fields.selectedFromTimestampMs;
+  ctx.state.selectedToTimestampMs = fields.selectedToTimestampMs;
+  ctx.state.selectedFromTimeText = fields.selectedFromTimeText;
+  ctx.state.selectedToTimeText = fields.selectedToTimeText;
+  ctx.state.maxDropPct = fields.maxDropPct;
+  ctx.state.targetPressure = fields.targetPressure;
+  ctx.state.reportMetadata = fields.reportMetadata;
+  ctx.state.manualRows = fields.manualRows;
+  ctx.state.selectedFileName = fields.selectedFileName;
+  ctx.state.fileParseResult = null;
+  ctx.state.parseResult = null;
+  recomputeManualValidation(ctx);
+
+  applyActiveSource(ctx);
+
+  const outcome = describeRestoreOutcome(session);
+  ctx.state.sessionStatus = {
+    kind: 'imported',
+    message: `Session importert: ${outcome.message}`,
+    lastAutosaveAt: new Date().toISOString()
+  };
+
+  // Persist immediately so the imported session survives a subsequent restart.
+  // Silent because we want the "Session importert" message to stay visible.
+  autosave(ctx.state, { silent: true });
+
+  // Reset the import input so the same file can be re-imported if needed.
+  input.value = '';
+  render(ctx.root, ctx.state);
+}
+
+function buildSessionFilename(sessionId: string): string {
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace('T', '-')
+    .replace(/\..+$/, '');
+  const safeId = sessionId.replace(/[^a-z0-9_-]/gi, '_');
+  return `IHPU_session_${stamp}_${safeId}.json`;
+}
+
+function triggerBlobDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }
