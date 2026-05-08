@@ -1,15 +1,23 @@
 // pdfReport.ts — jsPDF customer report.
 //
-// The pure builder (`buildCustomerReportPdf`) returns a Uint8Array that can
-// be written to disk or wrapped in a Blob. It does not touch the DOM and is
-// exercised directly by Vitest.
+// The pure builder (`buildCustomerReportPdf`) returns an ArrayBuffer that can
+// be written to disk or wrapped in a Blob. It does not touch the DOM, never
+// imports Chart.js, and is exercised directly by Vitest.
 //
-// Layout is deliberately simple: title, metadata block, selected period,
-// criteria, analysis, prominent PASS/FAIL/UNKNOWN badge, hold-period detail,
-// issues, and operator comment. Everything is text — no chart image, no
-// embedded fonts, no external resources.
+// Layout: title, metadata, selected period, criteria, PASS/FAIL/UNKNOWN
+// badge, optional chart image (Trykkforløp), hold-period detail, analysis,
+// optional raw-data table (Rådata) for the selected period, parser summary,
+// issues, comment, footer. The chart image and raw-data rows are passed in
+// by the caller via the options object — the builder itself never captures
+// canvases or filters rows. See report-polish-chart-image-and-raw-data.md.
 
 import { jsPDF } from 'jspdf';
+import type { PressureRow } from '../domain/types';
+import {
+  applyRawDataTruncation,
+  filterRowsToReportPeriod,
+  RAW_DATA_TRUNCATION_HALF
+} from './reportRows';
 import type { ReportModel } from './reportTypes';
 
 // Visual constants — kept minimal so layout is predictable.
@@ -21,16 +29,65 @@ const BADGE_FONT_SIZE = 22;
 const LINE_GAP = 5;                // mm
 const SECTION_GAP = 4;             // mm
 
+// Raw-data table layout (mm). Column widths sum to ~contentWidth for A4.
+const TABLE_FONT_SIZE = 8;
+const TABLE_HEADER_HEIGHT = 5;
+const TABLE_ROW_HEIGHT = 4;
+const TABLE_COL_WIDTHS = [12, 60, 22, 30, 30]; // # / localIso / tMinutes / p1 / p2
+const TABLE_HEADER_FILL: [number, number, number] = [232, 232, 232];
+
+// Chart image layout
+const CHART_MAX_HEIGHT_MM = 90;
+
 const COLOR_PASS: [number, number, number] = [42, 158, 96];
 const COLOR_FAIL: [number, number, number] = [200, 60, 60];
 const COLOR_UNKNOWN: [number, number, number] = [110, 110, 110];
+
+export interface ChartImageInput {
+  /** Base64-encoded PNG data URL — `data:image/png;base64,...` */
+  dataUrl: string;
+  /** Source canvas pixel width. Used only to compute aspect ratio in the PDF. */
+  widthPx: number;
+  /** Source canvas pixel height. Used only to compute aspect ratio in the PDF. */
+  heightPx: number;
+}
+
+export interface BuildPdfOptions {
+  /**
+   * Optional chart image. When supplied, a "Trykkforløp" section is rendered
+   * after the PASS/FAIL/UNKNOWN badge with the image scaled to full content
+   * width and a maximum visual height of 90 mm (aspect ratio preserved).
+   * The chart image carries the operator's selected-period highlight as
+   * drawn in the live UI — no extra DOM work happens here.
+   */
+  chartImage?: ChartImageInput;
+  /**
+   * Optional raw rows. When supplied, a "Rådata" section is rendered after
+   * the analysis summary, filtered to the selected period via the same rule
+   * as the CSV export. Rows are emitted under the truncation rule:
+   *   - <= 1000 rows  → all rows verbatim
+   *   - >  1000 rows  → first 500 + omission marker + last 500
+   * Pass the raw `state.parseResult.rows` here; do NOT pre-filter or
+   * pre-truncate. The function does both internally.
+   */
+  rows?: PressureRow[];
+}
 
 /**
  * Build a customer report PDF. Returns the underlying ArrayBuffer so it can
  * be wrapped in a Blob for download from the renderer, or written to disk in
  * a Node-based test context. Use `new Uint8Array(buffer)` to inspect bytes.
+ *
+ * Both `options.chartImage` and `options.rows` are optional; when omitted,
+ * the corresponding section is simply skipped. This means callers (like
+ * the smoke test or PDF unit tests) can build a PDF without a chart or
+ * without raw data, and operators get a chartless PDF gracefully if the
+ * canvas is not yet ready at export time.
  */
-export function buildCustomerReportPdf(report: ReportModel): ArrayBuffer {
+export function buildCustomerReportPdf(
+  report: ReportModel,
+  options: BuildPdfOptions = {}
+): ArrayBuffer {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -84,6 +141,11 @@ export function buildCustomerReportPdf(report: ReportModel): ArrayBuffer {
   // ---- PASS/FAIL/UNKNOWN badge ----
   y = renderResultBadge(doc, y, contentWidth, report.hold.status);
 
+  // ---- Chart image (Trykkforløp) — optional ----
+  if (options.chartImage) {
+    y = renderChartImage(doc, y, pageHeight, contentWidth, options.chartImage);
+  }
+
   // ---- Hold detail ----
   y = renderSection(doc, y, 'Holdperiode-detaljer', [
     ['Brukt drop %', fmtPct(report.hold.usedDropPct)],
@@ -109,6 +171,11 @@ export function buildCustomerReportPdf(report: ReportModel): ArrayBuffer {
           : 'Nei'
     ]
   ]);
+
+  // ---- Raw data table (Rådata) — optional ----
+  if (options.rows) {
+    y = renderRawDataTable(doc, y, pageHeight, contentWidth, report, options.rows);
+  }
 
   // ---- Parser summary ----
   y = renderSection(doc, y, 'Parser-sammendrag', [
@@ -228,6 +295,183 @@ function renderSection(
   }
   y += SECTION_GAP;
   return y;
+}
+
+function renderChartImage(
+  doc: jsPDF,
+  y: number,
+  pageHeight: number,
+  contentWidth: number,
+  image: ChartImageInput
+): number {
+  // Compute proportional render height from canvas pixel ratio. Cap at
+  // CHART_MAX_HEIGHT_MM so a tall canvas doesn't push everything else off
+  // the page. Width is always full content-width.
+  const aspect = image.heightPx > 0 ? image.heightPx / image.widthPx : 0.5;
+  const renderWidth = contentWidth;
+  const naturalHeight = renderWidth * aspect;
+  const renderHeight = Math.min(naturalHeight, CHART_MAX_HEIGHT_MM);
+
+  // Need room for section header (~7mm) + image + section gap.
+  y = ensureSpace(doc, y, pageHeight, renderHeight + 12);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(SECTION_FONT_SIZE);
+  doc.text('Trykkforløp', PAGE_MARGIN, y);
+  y += LINE_GAP;
+
+  // jsPDF accepts a base64 data URL directly for PNG. The width/height args
+  // are in mm; aspect ratio is preserved by jsPDF when both are supplied.
+  doc.addImage(image.dataUrl, 'PNG', PAGE_MARGIN, y, renderWidth, renderHeight);
+  y += renderHeight;
+
+  // Caption hint so the customer knows what the highlight (if any) means.
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(BODY_FONT_SIZE - 1);
+  doc.setTextColor(110);
+  doc.text(
+    'Markert område viser valgt analyse-periode (når satt).',
+    PAGE_MARGIN,
+    y + 3.5
+  );
+  doc.setTextColor(0);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(BODY_FONT_SIZE);
+
+  return y + 3.5 + SECTION_GAP * 2;
+}
+
+function renderRawDataTable(
+  doc: jsPDF,
+  y: number,
+  pageHeight: number,
+  contentWidth: number,
+  report: ReportModel,
+  rows: PressureRow[]
+): number {
+  const filtered = filterRowsToReportPeriod(rows, report);
+  const truncation = applyRawDataTruncation(filtered);
+  const totalForReport = filtered.length;
+
+  // Section header.
+  y = ensureSpace(doc, y, pageHeight, 16);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(SECTION_FONT_SIZE);
+  const headerText =
+    truncation.omittedCount > 0
+      ? `Rådata (${totalForReport} rader for valgt periode — viser første ${RAW_DATA_TRUNCATION_HALF} + siste ${RAW_DATA_TRUNCATION_HALF}, ${truncation.omittedCount} utelatt)`
+      : `Rådata (${totalForReport} rader for valgt periode)`;
+  doc.text(headerText, PAGE_MARGIN, y);
+  y += LINE_GAP;
+
+  if (filtered.length === 0) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(BODY_FONT_SIZE);
+    doc.setTextColor(110);
+    doc.text('Ingen rader i valgt periode.', PAGE_MARGIN, y);
+    doc.setTextColor(0);
+    doc.setFont('helvetica', 'normal');
+    return y + LINE_GAP;
+  }
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(TABLE_FONT_SIZE);
+
+  // The header is rendered at the top of the section AND repeated on every
+  // page break that occurs while emitting body rows. Keeps the table
+  // self-describing on every printed page.
+  y = renderTableHeader(doc, y, contentWidth);
+
+  for (const row of truncation.firstHalf) {
+    if (y + TABLE_ROW_HEIGHT > pageHeight - PAGE_MARGIN) {
+      doc.addPage();
+      y = PAGE_MARGIN;
+      y = renderTableHeader(doc, y, contentWidth);
+    }
+    renderTableRow(doc, y, row);
+    y += TABLE_ROW_HEIGHT;
+  }
+
+  if (truncation.secondHalf !== null) {
+    if (y + TABLE_ROW_HEIGHT > pageHeight - PAGE_MARGIN) {
+      doc.addPage();
+      y = PAGE_MARGIN;
+      y = renderTableHeader(doc, y, contentWidth);
+    }
+    renderOmissionMarker(doc, y, contentWidth, truncation.omittedCount);
+    y += TABLE_ROW_HEIGHT;
+
+    for (const row of truncation.secondHalf) {
+      if (y + TABLE_ROW_HEIGHT > pageHeight - PAGE_MARGIN) {
+        doc.addPage();
+        y = PAGE_MARGIN;
+        y = renderTableHeader(doc, y, contentWidth);
+      }
+      renderTableRow(doc, y, row);
+      y += TABLE_ROW_HEIGHT;
+    }
+  }
+
+  // Reset font state for following sections.
+  doc.setFontSize(BODY_FONT_SIZE);
+  doc.setFont('helvetica', 'normal');
+
+  return y + SECTION_GAP;
+}
+
+function renderTableHeader(doc: jsPDF, y: number, contentWidth: number): number {
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(TABLE_FONT_SIZE);
+  doc.setFillColor(TABLE_HEADER_FILL[0], TABLE_HEADER_FILL[1], TABLE_HEADER_FILL[2]);
+  doc.rect(PAGE_MARGIN, y - 3.5, contentWidth, TABLE_HEADER_HEIGHT, 'F');
+  const labels = ['#', 'localIso', 'tMinutes', 'p1', 'p2'];
+  let x = PAGE_MARGIN + 1.5;
+  for (let i = 0; i < labels.length; i++) {
+    doc.text(labels[i]!, x, y);
+    x += TABLE_COL_WIDTHS[i]!;
+  }
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(TABLE_FONT_SIZE);
+  return y + TABLE_HEADER_HEIGHT;
+}
+
+function renderTableRow(doc: jsPDF, y: number, row: PressureRow): void {
+  const cells = [
+    String(row.index),
+    row.localIso,
+    fmtNumber(row.tMinutes),
+    fmtNumber(row.p1),
+    fmtNumber(row.p2)
+  ];
+  let x = PAGE_MARGIN + 1.5;
+  for (let i = 0; i < cells.length; i++) {
+    doc.text(cells[i]!, x, y);
+    x += TABLE_COL_WIDTHS[i]!;
+  }
+}
+
+function renderOmissionMarker(
+  doc: jsPDF,
+  y: number,
+  contentWidth: number,
+  omittedCount: number
+): void {
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(TABLE_FONT_SIZE);
+  doc.setTextColor(110);
+  doc.text(
+    `… ${omittedCount} rader utelatt …`,
+    PAGE_MARGIN + contentWidth / 2,
+    y,
+    { align: 'center' }
+  );
+  doc.setTextColor(0);
+  doc.setFont('helvetica', 'normal');
+}
+
+function fmtNumber(v: number | null | undefined): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '';
+  return String(v);
 }
 
 function renderResultBadge(

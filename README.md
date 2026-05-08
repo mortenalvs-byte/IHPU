@@ -157,10 +157,14 @@ artifacts read from the same `ReportModel` produced by `buildReportModel`,
 so the dashboard, the CSV, and the PDF cannot disagree on numbers.
 
 CSV uses CRLF line endings and period decimal separator (machine-readable).
-PDF is text-only A4 with a prominent result badge — the chart image is
-intentionally deferred to a follow-up PR.
+PDF is A4 with a prominent PASS/FAIL/UNKNOWN badge, the chart image
+captured via Chart.js's native `toBase64Image()` (no `html2canvas`),
+and a tabular **Rådata**-section that mirrors the same selected-period
+row set the CSV uses. Raw-data table truncates gracefully: ≤ 1000 rows
+verbatim, > 1000 rows = first 500 + omission marker + last 500.
 
-See [docs/development/report-export-foundation.md](docs/development/report-export-foundation.md).
+See [docs/development/report-export-foundation.md](docs/development/report-export-foundation.md)
+and [docs/development/report-polish-chart-image-and-raw-data.md](docs/development/report-polish-chart-image-and-raw-data.md).
 
 ## Manual data entry
 
@@ -226,6 +230,6 @@ See [docs/development/test-session-workflow-and-persistence.md](docs/development
 8. ~~Manual data entry + validation~~ (done)
 9. ~~Test-session workflow + project persistence~~ (done)
 10. ~~Multi-file comparison foundation~~ (done)
-11. Report polish + chart image in PDF
+11. ~~Report polish + chart image in PDF~~ (done)
 12. Windows installer + ICO + code-sign + release packaging
 13. Final UI polish + operator QA checklist

@@ -10,6 +10,7 @@
 // (`triggerCsvDownload`) is browser/Electron-renderer only.
 
 import type { PressureRow } from '../domain/types';
+import { filterRowsToReportPeriod } from './reportRows';
 import type { ReportModel } from './reportTypes';
 
 const CRLF = '\r\n';
@@ -172,13 +173,6 @@ function numberCell(v: number | null | undefined): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return '';
   // Use sufficient precision to be machine-readable without rounding loss.
   return String(v);
-}
-
-function filterRowsToReportPeriod(rows: PressureRow[], report: ReportModel): PressureRow[] {
-  if (report.selectedPeriod.isFullRange) return rows;
-  const lo = report.selectedPeriod.fromIso ? Date.parse(report.selectedPeriod.fromIso + 'Z') : Number.NEGATIVE_INFINITY;
-  const hi = report.selectedPeriod.toIso ? Date.parse(report.selectedPeriod.toIso + 'Z') : Number.POSITIVE_INFINITY;
-  return rows.filter((r) => r.timestampMs >= lo && r.timestampMs <= hi);
 }
 
 function sanitizeForFilename(s: string): string {
