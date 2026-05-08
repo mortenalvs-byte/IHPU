@@ -234,6 +234,30 @@ describe('buildCustomerReportPdf: optional raw-data table', () => {
     const text = new TextDecoder('latin1').decode(new Uint8Array(buffer));
     expect(text).toContain('Ingen rader');
   });
+
+  it('formats tMinutes with 3 decimal places to prevent column overflow', () => {
+    // Regression: irrational tMinutes (e.g. 7-second intervals → 0.11666...)
+    // used to be emitted via String(v) which wrote up to 17 digits and
+    // visually collided with the next column. The fix clamps to .toFixed(3).
+    const buffer = buildCustomerReportPdf(reportWithHold(5), {
+      rows: parsed.rows
+    });
+    const text = new TextDecoder('latin1').decode(new Uint8Array(buffer));
+    // Row 1 of the canonical fixture: 7 s after row 0 → tMinutes ≈ 0.1167.
+    // Expect the rounded form to be present, NOT the long-decimal form.
+    expect(text).toContain('0.117');
+    expect(text).not.toContain('0.11666666666');
+    expect(text).not.toContain('0.23333333333');
+  });
+
+  it('handles tMinutes of 0 cleanly (first row)', () => {
+    const buffer = buildCustomerReportPdf(reportWithHold(5), {
+      rows: parsed.rows
+    });
+    const text = new TextDecoder('latin1').decode(new Uint8Array(buffer));
+    // First row's tMinutes is 0 → should render as "0.000".
+    expect(text).toContain('0.000');
+  });
 });
 
 function synthesizeRows(count: number): PressureRow[] {

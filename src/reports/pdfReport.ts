@@ -439,7 +439,7 @@ function renderTableRow(doc: jsPDF, y: number, row: PressureRow): void {
   const cells = [
     String(row.index),
     row.localIso,
-    fmtNumber(row.tMinutes),
+    fmtTMinutes(row.tMinutes),
     fmtNumber(row.p1),
     fmtNumber(row.p2)
   ];
@@ -472,6 +472,21 @@ function renderOmissionMarker(
 function fmtNumber(v: number | null | undefined): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return '';
   return String(v);
+}
+
+/**
+ * Format tMinutes for the Rådata column. Unlike p1/p2 (which the parser
+ * stores at 6-decimal sensor precision and fit cleanly in 30 mm), tMinutes
+ * is computed from `(timestampMs - first) / 60_000` and produces irrational
+ * expansions (e.g. 7-second intervals → 0.11666666...). String(v) emits
+ * up to 17 digits, which overflows the 22 mm column and visually
+ * collides with the next column. Clamp to 3 decimals — that's enough
+ * resolution to distinguish 7 s intervals (0.117 vs 0.233) while
+ * keeping the column readable.
+ */
+function fmtTMinutes(v: number | null | undefined): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '';
+  return v.toFixed(3);
 }
 
 function renderResultBadge(
