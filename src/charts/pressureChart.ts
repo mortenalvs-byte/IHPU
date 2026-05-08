@@ -198,6 +198,33 @@ export class PressureChart {
     return this.chart !== null;
   }
 
+  /**
+   * Capture the current chart canvas as a base64-encoded PNG data URL via
+   * Chart.js's native toBase64Image. Returns null when the chart has not
+   * been mounted with data yet. Used by the PDF report exporter; no DOM
+   * mutation, no Chart.js plugin work.
+   */
+  toBase64Image(): string | null {
+    if (!this.chart) return null;
+    // Chart.js native — emits 'data:image/png;base64,...' from the underlying
+    // canvas. Quality argument is ignored for PNG. Default quality of 1.0
+    // yields the same content as the on-screen render.
+    return this.chart.toBase64Image('image/png', 1.0);
+  }
+
+  /**
+   * Return the actual pixel dimensions of the canvas backing this chart.
+   * Falls back to a sane default if the chart isn't mounted (caller should
+   * only call this when isReady() is true).
+   */
+  getCanvasDimensions(): { widthPx: number; heightPx: number } | null {
+    if (!this.chart) return null;
+    const widthPx = this.canvas.width || 0;
+    const heightPx = this.canvas.height || 0;
+    if (widthPx <= 0 || heightPx <= 0) return null;
+    return { widthPx, heightPx };
+  }
+
   // ---------- drag-select implementation ----------
 
   private attachDragHandlers(): void {

@@ -61,6 +61,17 @@ test.describe('Electron app smoke', () => {
       await window.getByTestId('export-pdf-button').click();
       await expect(window.getByTestId('export-status')).toContainText('PDF exported');
 
+      // Verify the PDF byte size is materially larger than a text-only PDF
+      // could be — the export-status text reads
+      // `PDF exported: <filename> (<bytes> bytes)`. The text-only baseline
+      // for this fixture is ~5–10 kB; with the chart image and the 461-row
+      // raw-data table the PDF is comfortably above 30 kB.
+      const pdfStatusText = await window.getByTestId('export-status').textContent();
+      const pdfMatch = pdfStatusText?.match(/\((\d+) bytes\)/);
+      expect(pdfMatch, `PDF status should include byte count: "${pdfStatusText}"`).not.toBeNull();
+      const pdfBytes = Number(pdfMatch![1]);
+      expect(pdfBytes).toBeGreaterThan(30_000);
+
       await window.screenshot({
         path: path.join(screenshotDir, 'electron-file-flow.png'),
         fullPage: true

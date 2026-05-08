@@ -4,6 +4,7 @@
 // and analysis modules are pure domain functions — they receive the text and
 // return structured ParseResult / PressureDropResult / HoldPeriodResult.
 
+import { captureChartImage } from '../charts/captureChart';
 import type { PressureChart, SelectedRange } from '../charts/pressureChart';
 import { evaluateHoldPeriod } from '../domain/holdPeriod';
 import { parseIhpuPressureLog } from '../domain/ihpuParser';
@@ -326,7 +327,15 @@ function handleExportPdf(ctx: AppContext): void {
     return;
   }
   try {
-    const buffer = buildCustomerReportPdf(result.report);
+    // Best-effort chart capture. If the chart is not ready (no data mounted
+    // yet, canvas not laid out, etc.) we still emit the PDF, just without
+    // the Trykkforløp section. The builder also accepts a missing chartImage.
+    const chartImage = ctx.chart.isReady() ? captureChartImage(ctx.chart) : null;
+
+    const buffer = buildCustomerReportPdf(result.report, {
+      chartImage: chartImage ?? undefined,
+      rows: ctx.state.parseResult?.rows
+    });
     const filename = buildSafeReportFilename(result.report, 'pdf');
     triggerPdfDownload(buffer, filename);
     ctx.state.exportStatus = {
