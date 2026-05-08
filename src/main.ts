@@ -11,7 +11,8 @@ import { createState, type AppState } from './app/state';
 // truth for the "app is ready" indicator and the "no file loaded" status.
 const APP_SHELL_MARKERS = {
   appReady: 'Bootstrap OK',
-  fileStatusInitial: 'Ingen data lastet'
+  fileStatusInitial:
+    'Ingen data lastet — velg .txt/.csv/.dat/.tsv/.log, eller bruk Manuell registrering.'
 } as const;
 
 interface AppContext {

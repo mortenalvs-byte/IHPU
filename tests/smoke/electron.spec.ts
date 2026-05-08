@@ -30,8 +30,15 @@ test.describe('Electron app smoke', () => {
       await expect(window).toHaveTitle(/IHPU TrykkAnalyse/);
       await expect(window.getByTestId('app-title')).toContainText('IHPU TrykkAnalyse');
       await expect(window.getByTestId('app-ready')).toContainText('Bootstrap OK');
+      // Empty-state should both communicate "no data" and tell the operator
+      // what to do next (PR #11 polish).
       await expect(window.getByTestId('file-status')).toContainText('Ingen data lastet');
+      await expect(window.getByTestId('file-status')).toContainText('Manuell registrering');
       await expect(window.getByTestId('file-input')).toBeEnabled();
+      // Hold narrative starts as the empty-state hint.
+      await expect(window.getByTestId('hold-narrative')).toContainText(
+        'Ingen evaluering ennå'
+      );
 
       // Manual section visible from start
       await expect(window.getByTestId('manual-entry-section')).toBeVisible();
@@ -42,6 +49,12 @@ test.describe('Electron app smoke', () => {
       await expect(window.getByTestId('chart-status')).toContainText('Klar');
       await expect(window.getByTestId('pressure-drop-bar')).toContainText('15.108');
       await expect(window.getByTestId('hold-status')).toHaveText('PASS');
+      // hold-narrative should explain the verdict in human terms (PR #11).
+      await expect(window.getByTestId('hold-narrative')).toContainText('PASS');
+      await expect(window.getByTestId('hold-narrative')).toContainText('margin');
+      // full-log-summary shows the parsed time range + total duration.
+      await expect(window.getByTestId('full-log-summary')).toContainText('13:10:37');
+      await expect(window.getByTestId('full-log-summary')).toContainText('min');
 
       // Manual period round-trip
       await window.getByTestId('period-from-input').fill('13:10:37');
@@ -50,10 +63,22 @@ test.describe('Electron app smoke', () => {
       await window.getByTestId('reset-period-selection').click();
       await expect(window.getByTestId('selected-period-summary')).toContainText('Hele loggen');
 
+      // Before metadata is filled the report-preview-status is advisory but
+      // the export button is enabled — operator can always export.
+      await expect(window.getByTestId('export-csv-button')).toBeEnabled();
+      await expect(window.getByTestId('export-pdf-button')).toBeEnabled();
+      await expect(window.getByTestId('report-preview-status')).toContainText(
+        'kundenavn anbefalt'
+      );
+
       // Report metadata + export
       await window.getByTestId('report-customer-input').fill('Test Customer AS');
       await window.getByTestId('report-project-input').fill('PRJ-001');
       await window.getByTestId('report-test-date-input').fill('21.02.2026');
+      // After kundenavn the advisory drops the warning.
+      await expect(window.getByTestId('report-preview-status')).toContainText(
+        'Klar for eksport'
+      );
       await expect(window.getByTestId('export-csv-button')).toBeEnabled();
       await window.getByTestId('export-csv-button').click();
       await expect(window.getByTestId('export-status')).toContainText('CSV exported');
@@ -71,6 +96,19 @@ test.describe('Electron app smoke', () => {
       expect(pdfMatch, `PDF status should include byte count: "${pdfStatusText}"`).not.toBeNull();
       const pdfBytes = Number(pdfMatch![1]);
       expect(pdfBytes).toBeGreaterThan(30_000);
+
+      // PR #11 polish: reload the renderer and confirm that file-mode
+      // session restore surfaces the needs-file CSS hint on the upload card.
+      // Raw bytes are not persisted, so the operator must reselect the file
+      // — the visual hint draws their attention to where to click.
+      await window.reload();
+      await window.waitForLoadState('domcontentloaded');
+      await expect(window.getByTestId('session-status')).toContainText('gjenopprettet');
+      await expect(window.getByTestId('upload-section')).toHaveClass(/needs-file/);
+      // Reselecting the file removes the hint.
+      await window.getByTestId('file-input').setInputFiles(fixturePath);
+      await expect(window.getByTestId('parsed-row-count')).toHaveText('461');
+      await expect(window.getByTestId('upload-section')).not.toHaveClass(/needs-file/);
 
       await window.screenshot({
         path: path.join(screenshotDir, 'electron-file-flow.png'),

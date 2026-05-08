@@ -218,6 +218,19 @@ rows round-trip in full because they originated as operator input.
 
 See [docs/development/test-session-workflow-and-persistence.md](docs/development/test-session-workflow-and-persistence.md).
 
+## Operator documentation
+
+End-user-facing documentation lives in `docs/`:
+
+- [Operator user guide](docs/operator-user-guide.md) — complete walk-through
+  written for the operator in the field
+- [Operator QA checklist](docs/operator-qa-checklist.md) — pre-customer-delivery
+  validation steps
+- [Release-candidate checklist](docs/release-candidate-checklist.md) —
+  engineering-side gate before tagging a release
+
+Version-by-version changes are tracked in [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Migration roadmap
 
 1. ~~Bootstrap structure~~ (done)
@@ -232,4 +245,4 @@ See [docs/development/test-session-workflow-and-persistence.md](docs/development
 10. ~~Multi-file comparison foundation~~ (done)
 11. ~~Report polish + chart image in PDF~~ (done)
 12. Windows installer + ICO + code-sign + release packaging
-13. Final UI polish + operator QA checklist
+13. ~~Final UI polish + operator QA checklist~~ (done)

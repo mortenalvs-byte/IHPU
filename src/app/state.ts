@@ -156,7 +156,11 @@ export function createState(): AppState {
     sessionCreatedAtIso: null,
     overlay: {
       entries: [],
-      addStatus: { kind: 'idle', message: 'Ingen sammenligningsfiler lastet ennå.' }
+      addStatus: {
+        kind: 'idle',
+        message:
+          'Ingen sammenligningsfiler. Last opp én eller flere logger for å sammenligne mot aktiv analyse.'
+      }
     }
   };
 }
